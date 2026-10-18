@@ -8,8 +8,6 @@
 | 自检 | `MusePSona.Play.Cli` | `mdplay 谱.mdm [map] [--auto]` |
 | Unity | `Unity/` | 显示 + DFJK；`Plugins/Spine38` 直读 F8（**3.8.99**，勿用 4.x） |
 
-网页 `play/mdm_player` 仍是无判定预览。本端才接按键。
-
 ## 现在就能跑（不需要 Unity）
 
 ```text

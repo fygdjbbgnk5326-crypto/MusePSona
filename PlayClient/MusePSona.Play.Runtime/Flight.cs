@@ -1,6 +1,6 @@
 namespace MusePSona.Play;
 
-/// <summary>飞近时长与轨迹。与词典 §1.2–1.3 / render.js place() 对齐（含 Boss 齿轮 18 = 弹 13）。Y 为舞台向下（与网页 G 一致；Unity 显示时取负）。</summary>
+/// <summary>飞近时长与轨迹。与词典 §1.2–1.3 对齐（含 Boss 齿轮 18 = 弹 13）。Y 为舞台向下，Unity 显示时取负。</summary>
 public static class Flight
 {
     public const float HitX = -3.85f;

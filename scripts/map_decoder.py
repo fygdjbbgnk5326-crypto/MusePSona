@@ -7,7 +7,7 @@
 
 选项:
   --limit N                   只处理前 N 个 bundle
-  --dict <路径>               指定兜底词典文件(默认 ..\\OsuGenerator\\cd\\ci dian.txt)
+  --dict <路径>               指定兜底词典文件（默认 scripts\\data\\map_dictionary.txt）
   --no-dict                   禁用曲名翻译, 仅显示内部代号
 
 曲名来源优先级: 游戏官方配置表(config_others_assets_album*/defaultanchor 的 name+author)
@@ -19,7 +19,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 import _paths
 
-DICT_PATH = os.path.normpath(os.path.join(SCRIPT_DIR, r"..\OsuGenerator\cd\ci dian.txt"))
+DICT_PATH = os.path.join(SCRIPT_DIR, "data", "map_dictionary.txt")
 
 TICK = b"t\x00i\x00c\x00k\x00\x00\x00"
 

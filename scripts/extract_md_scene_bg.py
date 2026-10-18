@@ -21,7 +21,7 @@ sys.path.insert(0, HERE)
 import _paths  # noqa: E402
 import UnityPy
 
-DEFAULT_OUT = os.path.join(os.path.dirname(HERE), "play", "mdm_player", "assets", "md")
+DEFAULT_OUT = os.path.join(os.path.dirname(HERE), "PlayClient", "Unity", "Assets", "StreamingAssets", "MdLooks")
 SKIP_NAMES = {
     "HitPointAir", "HitPointRoad", "HitPointAirIn", "HitPointRoadIn",
     "HitPointAirOut", "HitPointRoadOut", "HitPointInCatch", "HitPointOutTriangle",
@@ -2334,11 +2334,7 @@ def main():
             print(f"scene_{s} bg 失败: {e}")
     if args.particles:
         return
-    try:
-        import sync_md_assets_to_unity as sync
-        sync.copy_looks()
-    except Exception as e:
-        print("同步 Unity 跳过:", e)
+    print("Unity MdLooks 已更新：", args.out)
 
 
 if __name__ == "__main__":

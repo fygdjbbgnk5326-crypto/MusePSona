@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""从本机已安装的 Muse Dash 读取场景 bundle，导出 MDM 预览器用的一小套物件贴图。
+"""从本机已安装的 Muse Dash 读取场景 bundle，导出 Unity 游玩端使用的物件贴图。
 
-只读游戏文件；输出到 play/mdm_player/assets/md/（已 .gitignore，仅限本机个人使用，不要提交/分发）。
+只读游戏文件；输出到 Unity StreamingAssets/MdLooks（已 .gitignore，仅限本机个人使用，不要提交/分发）。
 
 怪物在游戏里是 Spine 骨骼动画（部件拼装），这里只裁切每种物件的「主体」部件
-（body / sawtooth / wooden / hp / score ...），外加长按条与判定圈 Sprite，足够在预览器里辨认种类。
+（body / sawtooth / wooden / hp / score ...），外加长按条与判定圈 Sprite，供 Unity 游玩端加载。
 
 用法：
-  python scripts/extract_md_sprites.py               # 默认 scene_01 → assets/md/sprites/scene_01/
+  python scripts/extract_md_sprites.py               # 默认 scene_01 → Unity StreamingAssets/MdLooks/sprites/scene_01/
   python scripts/extract_md_sprites.py --all         # gamescene_01–12 各一份
   python scripts/extract_md_sprites.py --scene 05 --out <目录>
   python scripts/extract_md_sprites.py --list        # 只列出 bundle 里的 atlas 区域与 Sprite 名
@@ -23,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import _paths  # noqa: E402
 
-DEFAULT_OUT = os.path.join(os.path.dirname(HERE), "play", "mdm_player", "assets", "md")
+DEFAULT_OUT = os.path.join(os.path.dirname(HERE), "PlayClient", "Unity", "Assets", "StreamingAssets", "MdLooks")
 
 # 输出键 -> (候选 atlas 区域名, 来源)。区域名里的 {s} 替换为两位场景号；按顺序取第一个存在的。
 # 场景内编号（见 notedata prefab_name）：02 长按 03 齿轮 04 连打 08 Boss 炸弹 09 Boss 齿轮
@@ -416,24 +416,9 @@ def extract_scene(s, out, common_path):
             os.remove(os.path.join(out, fn))
 
     scene = "scene_" + s
-    pack_js = ("/* 由 scripts/extract_md_sprites.py 生成；游戏素材仅限本机使用。 */\n"
-               "window.MD_SPRITE_PACKS = window.MD_SPRITE_PACKS || {};\n"
-               "window.MD_SPRITE_PACKS[%s] = %s;\n"
-               % (json.dumps(scene), json.dumps({"scene": scene, "sprites": manifest}, ensure_ascii=False)))
-    with open(os.path.join(out, "manifest.js"), "w", encoding="utf-8") as f:
-        f.write(pack_js)
     with open(os.path.join(out, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump({"scene": scene, "sprites": manifest}, f, ensure_ascii=False)
     return manifest, missing
-
-
-def write_root_manifest(out, scene, manifest, rel_prefix=""):
-    files = {k: dict(v, file=rel_prefix + v["file"]) for k, v in manifest.items()}
-    js = ("/* 由 scripts/extract_md_sprites.py 生成；游戏素材仅限本机使用。 */\n"
-          "(window.MDP = window.MDP || {}).mdAssets = "
-          + json.dumps({"scene": scene, "sprites": files}, ensure_ascii=False, indent=1) + ";\n")
-    with open(os.path.join(out, "manifest.js"), "w", encoding="utf-8") as f:
-        f.write(js)
 
 
 def extract_hit_fx(out_root, bdir):
@@ -768,17 +753,11 @@ def extract_djmax_combo(dest, manifest):
     print("DJMAX combo: 3 张 ImgCombo + %s 张 Teko 数字 → %s" % (n, dest))
 
 
-def write_sprite_index(sprites_dir, scenes):
-    index = {sc: sc + "/manifest.js" for sc in scenes}
-    with open(os.path.join(sprites_dir, "index.js"), "w", encoding="utf-8") as f:
-        f.write("window.MD_SPRITE_INDEX = " + json.dumps(index, ensure_ascii=False) + ";\n")
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--scene", default="01", help="场景号（两位，默认 01）")
     ap.add_argument("--all", action="store_true", help="抽出 gamescene_01–12 到 sprites/scene_XX/")
-    ap.add_argument("--out", default=DEFAULT_OUT, help="输出目录（assets/md）")
+    ap.add_argument("--out", default=DEFAULT_OUT, help="输出目录（默认 Unity StreamingAssets/MdLooks）")
     ap.add_argument("--list", action="store_true", help="只列出区域/Sprite 名，不导出")
     args = ap.parse_args()
 
@@ -800,7 +779,6 @@ def main():
     scenes = [f"{n:02d}" for n in range(1, 13)] if args.all else [args.scene.zfill(2)]
     sprites_dir = os.path.join(args.out, "sprites")
     done = []
-    first_man = None
     for s in scenes:
         try:
             find_bundle(bdir, f"gamescene_{s}")
@@ -810,9 +788,6 @@ def main():
         dest = os.path.join(sprites_dir, "scene_" + s)
         man, missing = extract_scene(s, dest, common)
         done.append("scene_" + s)
-        if first_man is None:
-            first_man = man
-            first_scene = "scene_" + s
         print(f"scene_{s}: {len(man)} 张 → {dest}" + (f"  未找到 {', '.join(missing)}" if missing else ""))
 
         extract_hit_fx(args.out, bdir)
@@ -825,14 +800,7 @@ def main():
             print(f"scene_{s} bg 跳过: {e}")
 
     if done:
-        write_sprite_index(sprites_dir, done)
-        write_root_manifest(args.out, first_scene, first_man, rel_prefix="sprites/" + done[0] + "/")
-        print("sprites/index.js：", {k: k + "/manifest.js" for k in done})
-        try:
-            import sync_md_assets_to_unity as sync
-            sync.copy_looks()
-        except Exception as e:
-            print("同步 Unity StreamingAssets 跳过：", e)
+        print("Unity MdLooks 已更新：", args.out)
 
 
 if __name__ == "__main__":
