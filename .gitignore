@@ -36,6 +36,7 @@ secrets.json
 !/自制谱/_template/**
 
 # Local extracted/diagnostic images
+/.codex-tmp/
 /_crop_*.png
 /_preview_*.png
 /PlayClient/_diag/

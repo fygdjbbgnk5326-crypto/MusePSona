@@ -71,22 +71,33 @@ public sealed partial class PlayDirector
 
     void LiveMash(float chartNow, out int count, out bool hitting)
     {
+        if (_liveMashFrame == Time.frameCount)
+        {
+            count = _liveMashCount;
+            hitting = _liveMashHitting;
+            return;
+        }
+        _liveMashFrame = Time.frameCount;
         count = 0;
         hitting = false;
-        if (_session == null) return;
-        foreach (var n in _session.MasherNotes)
+        if (_session != null)
         {
-            if (chartNow < (float)n.TimeSec) continue;
-            var g = _session.GradeOf(n.Id);
-            if (g is not (Judge.Grade.Perfect or Judge.Grade.Great)) continue;
-            var hits = _session.MashHits(n.Id);
-            if (hits <= 0) continue;
-            if (chartNow <= (float)n.EndSec + 0.02f)
+            foreach (var n in _session.MasherNotes)
             {
-                hitting = true;
-                count = hits;
+                if (chartNow < (float)n.TimeSec) break;
+                var g = _session.GradeOf(n.Id);
+                if (g is not (Judge.Grade.Perfect or Judge.Grade.Great)) continue;
+                var hits = _session.MashHits(n.Id);
+                if (hits <= 0) continue;
+                if (chartNow <= (float)n.EndSec + 0.02f)
+                {
+                    hitting = true;
+                    count = hits;
+                }
             }
         }
+        _liveMashCount = count;
+        _liveMashHitting = hitting;
     }
 
     bool EnsureHitsHud()
@@ -107,7 +118,9 @@ public sealed partial class PlayDirector
         {
             _hitsBurst = SpriteQuad(_hitsRoot, burst, HitsBurstW * worldScale, "base");
             PaintLayer(_hitsBurst, 3500, 100);
-            _hitsBurst.localScale = FitHitsBurst();
+            _hitsBurstFit = FitHitsBurst();
+            _hitsBurst.localScale = _hitsBurstFit;
+            TintOne(_hitsBurst, 1f);
         }
         _hitsBurst.localPosition = new Vector3(0f, 0f, 0.02f);
         _hitsNum.localPosition = new Vector3(0f, 0.22f, -0.04f);
@@ -186,10 +199,7 @@ public sealed partial class PlayDirector
                 sx = sy = 1f;
         }
         if (_hitsBurst != null)
-        {
-            _hitsBurst.localScale = Vector3.Scale(FitHitsBurst(), new Vector3(sx, sy, 1f));
-            TintOne(_hitsBurst, 1f);
-        }
+            _hitsBurst.localScale = Vector3.Scale(_hitsBurstFit, new Vector3(sx, sy, 1f));
         if (_hitsNum != null)
         {
             float nx = sx, ny = sy;
@@ -215,7 +225,6 @@ public sealed partial class PlayDirector
                 }
             }
             _hitsNum.localScale = new Vector3(nx, ny, 1f);
-            TintHits(1f);
         }
     }
 
@@ -232,16 +241,20 @@ public sealed partial class PlayDirector
     {
         if (_hitsNum == null) return;
         var c = new Color(1f, 1f, 1f, a);
-        foreach (var r in _hitsNum.GetComponentsInChildren<Renderer>(true))
-            TintRenderer(r, c);
+        _rendererScratch.Clear();
+        _hitsNum.GetComponentsInChildren(true, _rendererScratch);
+        for (var i = 0; i < _rendererScratch.Count; i++)
+            TintRenderer(_rendererScratch[i], c);
     }
 
-    static void TintOne(Transform t, float a)
+    void TintOne(Transform t, float a)
     {
         if (t == null) return;
         var c = new Color(1f, 1f, 1f, a);
-        foreach (var r in t.GetComponentsInChildren<Renderer>(true))
-            TintRenderer(r, c);
+        _rendererScratch.Clear();
+        t.GetComponentsInChildren(true, _rendererScratch);
+        for (var i = 0; i < _rendererScratch.Count; i++)
+            TintRenderer(_rendererScratch[i], c);
     }
 
     static void TintRenderer(Renderer r, Color c)
@@ -254,12 +267,14 @@ public sealed partial class PlayDirector
     void PlaceHitsDigits(int hits)
     {
         if (_hitsNum == null) return;
-        for (var i = _hitsNum.childCount - 1; i >= 0; i--)
-            Destroy(_hitsNum.GetChild(i).gameObject);
         var s = hits.ToString();
-        var steps = new float[s.Length];
-        var texs = new Texture2D[s.Length];
-        var hs = new float[s.Length];
+        if (_hitsDigitSteps.Length < s.Length)
+        {
+            var capacity = Mathf.Max(8, s.Length);
+            _hitsDigitSteps = new float[capacity];
+            _hitsDigitTextures = new Texture2D[capacity];
+            _hitsDigitHeights = new float[capacity];
+        }
         var total = 0f;
         for (var i = 0; i < s.Length; i++)
         {
@@ -267,20 +282,40 @@ public sealed partial class PlayDirector
             if (!MdLooks.TrySprite(_scene, "hits_digit_" + s[i], out tex) || tex == null)
                 MdLooks.TrySprite(_scene, "combo_digit_high_" + s[i], out tex);
             if (tex == null) return;
-            texs[i] = tex;
-            hs[i] = HitsDigitH * worldScale;
+            _hitsDigitTextures[i] = tex;
+            _hitsDigitHeights[i] = HitsDigitH * worldScale;
             var aspect = tex.height > 0 ? (float)tex.width / tex.height : 1f;
-            steps[i] = FitBox(hs[i], aspect).x * 0.78f;
-            total += steps[i];
+            _hitsDigitSteps[i] = FitBox(_hitsDigitHeights[i], aspect).x * 0.78f;
+            total += _hitsDigitSteps[i];
         }
         var x = -total * 0.5f;
         for (var i = 0; i < s.Length; i++)
         {
-            var t = SpriteQuad(_hitsNum, texs[i], hs[i], "d" + s[i]);
-            t.localPosition = new Vector3(x + steps[i] * 0.5f, 0f, 0f);
-            PaintLayer(t, 3510, 110);
-            x += steps[i];
+            Transform t;
+            if (i < _hitsDigitViews.Count)
+            {
+                t = _hitsDigitViews[i];
+                t.gameObject.SetActive(true);
+                var r = t.GetComponent<Renderer>();
+                if (r != null && r.sharedMaterial != null)
+                    MdMat.SetTex(r.sharedMaterial, _hitsDigitTextures[i]);
+                var aspect = _hitsDigitTextures[i].height > 0
+                    ? (float)_hitsDigitTextures[i].width / _hitsDigitTextures[i].height : 1f;
+                t.localScale = FitBox(_hitsDigitHeights[i], aspect);
+                t.name = "d" + s[i];
+            }
+            else
+            {
+                t = SpriteQuad(_hitsNum, _hitsDigitTextures[i], _hitsDigitHeights[i], "d" + s[i]);
+                PaintLayer(t, 3510, 110);
+                _hitsDigitViews.Add(t);
+            }
+            t.localPosition = new Vector3(x + _hitsDigitSteps[i] * 0.5f, 0f, 0f);
+            x += _hitsDigitSteps[i];
         }
+        for (var i = s.Length; i < _hitsDigitViews.Count; i++)
+            _hitsDigitViews[i].gameObject.SetActive(false);
+        TintHits(1f);
     }
 
     void TickCamera(float chartNow)
@@ -309,7 +344,7 @@ public sealed partial class PlayDirector
         var fade = dt / CamShakeLoop;
         _camX = Mathf.MoveTowards(_camX, targetX, Mathf.Abs(CamPullX) * fade);
         _camSize = Mathf.MoveTowards(_camSize, targetSize, (Flight.CameraSize - CamPullSize) * fade);
-        var cam = Camera.main;
+        var cam = _mainCamera;
         if (cam == null) return;
         cam.orthographic = true;
         cam.orthographicSize = _camSize;

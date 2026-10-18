@@ -146,7 +146,7 @@ public sealed partial class PlayDirector
         _comboRoot.localScale = new Vector3(100f * px2, 100f * px2, 1f);
         if (_comboWord != null)
         {
-            Destroy(_comboWord.gameObject);
+            DestroyOwnedVisual(_comboWord);
             _comboWord = null;
         }
         if (_comboSpine != null && (_comboDigits != band || _comboDjMax))
@@ -291,18 +291,16 @@ public sealed partial class PlayDirector
     void PlaceComboDigits(int combo)
     {
         if (_comboNumRoot == null) return;
-        for (var i = _comboNumRoot.childCount - 1; i >= 0; i--)
-        {
-            var child = _comboNumRoot.GetChild(i);
-            if (_comboWord != null && child == _comboWord) continue;
-            Destroy(child.gameObject);
-        }
         var s = combo.ToString();
+        if (_comboDigitSteps.Length < s.Length)
+        {
+            var capacity = Mathf.Max(8, s.Length);
+            _comboDigitSteps = new float[capacity];
+            _comboDigitTextures = new Texture2D[capacity];
+            _comboDigitHeights = new float[capacity];
+        }
         var band = combo >= 50 ? "high" : combo >= 20 ? "mid" : "low";
         var em = _comboDjMax ? 0.88f : (combo >= 50 ? 1.25f / 1.10f : 1f) * 0.90f;
-        var steps = new float[s.Length];
-        var texs = new Texture2D[s.Length];
-        var hs = new float[s.Length];
         var total = 0f;
         for (var i = 0; i < s.Length; i++)
         {
@@ -318,21 +316,40 @@ public sealed partial class PlayDirector
                         return;
                 }
             }
-            texs[i] = tex;
-            hs[i] = tex.height / 100f * em;
+            _comboDigitTextures[i] = tex;
+            _comboDigitHeights[i] = tex.height / 100f * em;
             var aspect = tex.height > 0 ? (float)tex.width / tex.height : 1f;
-            steps[i] = FitBox(hs[i], aspect).x;
-            total += steps[i];
+            _comboDigitSteps[i] = FitBox(_comboDigitHeights[i], aspect).x;
+            total += _comboDigitSteps[i];
         }
         var gap = _comboDjMax && s.Length > 1 ? 0.1f : 0f;
         total += gap * (s.Length - 1);
         var x = -total * 0.5f;
         for (var i = 0; i < s.Length; i++)
         {
-            var t = SpriteQuad(_comboNumRoot, texs[i], hs[i], "d" + s[i]);
-            t.localPosition = new Vector3(x + steps[i] * 0.5f, 0f, 0f);
-            PaintLayer(t, 3410, 90);
-            x += steps[i] + gap;
+            Transform t;
+            if (i < _comboDigitViews.Count)
+            {
+                t = _comboDigitViews[i];
+                t.gameObject.SetActive(true);
+                var r = t.GetComponent<Renderer>();
+                if (r != null && r.sharedMaterial != null)
+                    MdMat.SetTex(r.sharedMaterial, _comboDigitTextures[i]);
+                var aspect = _comboDigitTextures[i].height > 0
+                    ? (float)_comboDigitTextures[i].width / _comboDigitTextures[i].height : 1f;
+                t.localScale = FitBox(_comboDigitHeights[i], aspect);
+                t.name = "d" + s[i];
+            }
+            else
+            {
+                t = SpriteQuad(_comboNumRoot, _comboDigitTextures[i], _comboDigitHeights[i], "d" + s[i]);
+                PaintLayer(t, 3410, 90);
+                _comboDigitViews.Add(t);
+            }
+            t.localPosition = new Vector3(x + _comboDigitSteps[i] * 0.5f, 0f, 0f);
+            x += _comboDigitSteps[i] + gap;
         }
+        for (var i = s.Length; i < _comboDigitViews.Count; i++)
+            _comboDigitViews[i].gameObject.SetActive(false);
     }
 }

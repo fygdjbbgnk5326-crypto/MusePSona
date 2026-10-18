@@ -446,6 +446,42 @@ def extract_hit_fx(out_root, bdir):
         ("hit_gold_perfect", "GoldPerfect"),
         ("hit_gold_great", "GoldGreat"),
         ("hits_base", "HitsBase"),
+        # JudgeDisplay 的小 P 方向字。原图尺寸分别为 108x33 / 90x33，
+        # 不再由 Unity 的系统字体近似绘制。
+        ("judge_early", "Early"),
+        ("judge_late", "Late"),
+        # 曲终 FullComboText（官机 AnimationClip 长 2.0s）由十个独立 Image
+        # 逐字驱动；L/O 会重复使用同一张 Sprite。
+        ("full_combo_f", "fullcombo_f"),
+        ("full_combo_u", "fullcombo_u"),
+        ("full_combo_l", "fullcombo_l"),
+        ("full_combo_c", "fullcombo_c"),
+        ("full_combo_o", "fullcombo_o"),
+        ("full_combo_m", "fullcombo_m"),
+        ("full_combo_b", "fullcombo_b"),
+        ("full_combo_bang", "fullcombo_!"),
+        # 东方联动沿用逐字 FullComboText 动画，但字图是黑色主题专版。
+        ("full_combo_touhou_f", "fullcombo_f_touhou_black"),
+        ("full_combo_touhou_u", "fullcombo_u_touhou_black"),
+        ("full_combo_touhou_l", "fullcombo_l_touhou_black"),
+        ("full_combo_touhou_c", "fullcombo_c_touhou_black"),
+        ("full_combo_touhou_o", "fullcombo_o_touhou_black"),
+        ("full_combo_touhou_m", "fullcombo_m_touhou_black"),
+        ("full_combo_touhou_b", "fullcombo_b_touhou_black"),
+        ("full_combo_touhou_bang", "fullcombo_!_touhou_black"),
+        # DJMAX 的曲终提示不是普通逐字横排，而是 MaxCombo 徽章。
+        ("full_combo_djmax_text", "MaxComboText"),
+        ("full_combo_djmax_bg", "MaxComboTextBg"),
+        ("full_combo_djmax_crown", "MaxComboCrown"),
+        ("full_combo_djmax_star_l", "MaxComboStarL"),
+        ("full_combo_djmax_star_r", "MaxComboStarR"),
+        # 明日方舟联动的 FC 结算牌；语言默认取简中版。
+        ("full_combo_arknights_zh", "FC_zh"),
+        ("full_combo_arknights_en", "FC_en"),
+        ("full_combo_arknights_mark", "RHODES_ISLAND"),
+        # 官机左上 Score：AP 图标与 95x46 的中文“得分”标题。
+        ("hud_ap", "icon_ap"),
+        ("hud_score_title", "score_Chinese"),
     )
     for key, name in keys:
         src = None
@@ -459,6 +495,7 @@ def extract_hit_fx(out_root, bdir):
         src.save(os.path.join(dest, key + ".png"))
         manifest[key] = {"file": key + ".png", "w": src.width, "h": src.height, "src": name}
     extract_combo_digits(dest, manifest)
+    extract_score_digits(dest, manifest)
     extract_hits_digits(dest, manifest)
     extract_djmax_combo(dest, manifest)
     keep = {v["file"] for v in manifest.values()}
@@ -468,6 +505,56 @@ def extract_hit_fx(out_root, bdir):
     with open(os.path.join(dest, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump({"scene": "common", "sprites": manifest}, f, ensure_ascii=False)
     print(f"common hit: {len(manifest)} 张 → {dest}" + (f"  未找到 {', '.join(missing)}" if missing else ""))
+
+
+def extract_score_digits(dest, manifest):
+    """左上分数：官机 TxtScore 使用 LuckiestGuy-Regular、72px、浅青色。"""
+    import UnityPy
+    from io import BytesIO
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        print("没有 Pillow，跳过分数数字")
+        return
+    bdir = _paths.bundle_dir()
+    fonts = sorted(glob.glob(os.path.join(bdir, "fonts_assets_all_*.bundle")))
+    if not fonts:
+        print("未找到 fonts_assets_all_*.bundle，跳过分数数字")
+        return
+    env = UnityPy.load(fonts[0])
+    raw = None
+    # gamemain/TxtScore 的 m_Font 引用。
+    for o in env.objects:
+        if o.path_id != -2103961664902859467:
+            continue
+        tree = o.read_typetree()
+        fd = tree.get("m_FontData")
+        if isinstance(fd, list) and fd:
+            raw = bytes(fd)
+        break
+    if not raw:
+        print("未找到官机 Score 的 LuckiestGuy-Regular")
+        return
+
+    font = ImageFont.truetype(BytesIO(raw), 72)
+    fill = (190, 255, 255, 255)  # TxtScore m_Color = (0.7469, 1, 1, 1)
+    os.makedirs(dest, exist_ok=True)
+    for i in range(10):
+        ch = str(i)
+        box = font.getbbox(ch)
+        w = max(1, box[2] - box[0])
+        h = max(1, box[3] - box[1])
+        pad = 2
+        img = Image.new("RGBA", (w + pad * 2, h + pad * 2), (0, 0, 0, 0))
+        ImageDraw.Draw(img).text((pad - box[0], pad - box[1]), ch, font=font, fill=fill)
+        key = "score_digit_" + ch
+        img.save(os.path.join(dest, key + ".png"))
+        manifest[key] = {
+            "file": key + ".png",
+            "w": img.width,
+            "h": img.height,
+            "src": "LuckiestGuy-Regular_150_115@72",
+        }
 
 
 def extract_combo_digits(dest, manifest):

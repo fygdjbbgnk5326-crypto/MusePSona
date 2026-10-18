@@ -51,10 +51,10 @@ umpopoff 转录与官机谱面已核对 **完全一致**。307 combo 接长按�
 | 0B | 1 | 大型2 平移 | 大型2 | 0B | megalovania_map4（骷髅骑士） |
 | 0C | 1 | 突击者 上升（官 des `突袭小怪_上升`，prefab `xx1601–1606` road/air_up_1..3） | 突击者 | 0C | umpopoff / megalovania_map4 |
 | 0D | 1 | 摆锤 下落（官 des `摆锤_下落`，prefab `xx1501–1506` road/air_down_1..3） | 摆锤 | 0D | umpopoff / megalovania_map4 |
-| 0E | 1 | 双押 | 双押 | 0E | megalovania_map4 |
+| 0E | 1 | 双押（按 `pathway` 走本轨；角色用中轨 `double_hit`） | 双押 | 0E | megalovania_map4 |
 | 0F | 3 | 长按（头 length>0，中间点丢掉） | 长按 | 0F | umpopoff / milk / mopemope / megalovania_map4 |
-| 0G | 8 | 连打（中线；`连击_平移` / `连击_下落`） | 连打 | 0G | umpopoff / megalovania_map4 / change_the_game map4（60，可与 13 同拍） |
-| 0H | 2 | 齿轮 | 齿轮 | 0H | umpopoff / megalovania_map4 |
+| 0G | 8 | 连打（中线；`连击_平移` / `连击_下落`；两轨键都能打，80ms 一击） | 连打 | 0G | umpopoff / megalovania_map4 / change_the_game map4（60，可与 13 同拍） |
+| 0H | 2 | 齿轮（到判定圈当帧锁定撞击/PASS；越圈后不补判） | 齿轮 | 0H | umpopoff / megalovania_map4 |
 | 0I | 1 | 突击者 倒（官 des `突袭小怪_下落`，prefab `xx1607–1612` road/air_down_1..3） | 突击者 倒 | 0I | rush_hour map1–4（55）；buttoba_supernova map4（32） |
 | 0J | 1 | 摆锤 倒（官 des `摆锤_上升`，prefab `xx1507–1512` road/air_up_1..3） | 摆锤 倒 | 0J | rush_hour map1–4（55）；buttoba_supernova map4（54） |
 | 10 | — | 官包 **没有** 此 ibms（编辑器 音符 键） | 音符 | 10 | 勿用官 ibms `23` 去对 10 |
@@ -67,9 +67,9 @@ umpopoff 转录与官机谱面已核对 **完全一致**。307 combo 接长按�
 | 17 | 8 | Boss 连打2（`boss_01_连击后退场_48`。长条：瞬移 `multi_atk_hurt`，再 `multi_atk_hurt_end` 往右退场；点长：直接 `multi_atk_hurt_end`） | Boss 连打2 | 17 | zhuguang_zhuzhou map1–3；change_the_game map2–4（map4 在 70.8s，前面仍铺 `0G`）；chrome_vox map4（37.98s 条 / 141.29s 点） |
 | 18 | 2 | Boss 齿轮 | Boss 齿轮 | 18 | umpopoff / megalovania_map4 |
 | 20 | 6 | P 点 | P道具 | 20 | scarlet map5（129 个，档 3） |
-| 21 | 4 | 隐藏 / 幽灵 | 幽灵 | 21 | umpopoff / megalovania_map4 |
+| 21 | 4 | 隐藏 / 幽灵（判定前 150ms 渐隐；隐去后仍按普通攻击窗判定） | 幽灵 | 21 | umpopoff / megalovania_map4 |
 | 22 | 6 | 红心（common `0002_hp`） | 红心 | 22 | megalovania_map4 |
-| 23 | 7 | 音符条（common `0003_score`） | 音符条 | 23 | umpopoff / megalovania_map4 |
+| 23 | 7 | 音符条（common `0003_score`；角色接触自动收集，不消耗攻击键、不计连击） | 音符条 | 23 | umpopoff / megalovania_map4 |
 | 30 | 2 | 光玉 平移 | 中弹 | 同 ibms | flandre map5（11）；bad_apple map5（38） |
 | 31 | 2 | 光玉 上升 | 中弹 上 | 31 | scarlet map5 |
 | 32 | 2 | 光玉 下落 | 中弹 下 | 32 | scarlet map5 |
@@ -160,7 +160,7 @@ Unity `Flight` 已按 §1.2 时长、§1.3 几何绘制时间线（`Flight.HitFr
 
 接住（Perfect/Great）时头钉在 `HitX`，条子随尾缩短，`EndSec` 后消失。
 
-漏接：**不要**等 `MissAfter`（120ms）再松头——那会把头钉在判定线，记 Miss 时按 `TimeSec` 瞬移到线左（看起来卡住再弹出）。未接住时从头过线开始按 `LaneSpeed` 连续飞过，直到尾过 `OffLeft`。`LongPressController.OnControllerMiss` 是空桩；真正生效的是 **`LongPressHurt`** → `SpineActionController.SetAlpha(0.391)`（`m_HasAlpha`，DOTween **0.2s**）+ `LongPressNoteVisibleController.NoteTransparency`（头尾 `StarTransparencyCoroutine`、条子 `SliderTransparencyCoroutine`，条目标 alpha 约 0.55）。Unity：`Flight.TryHoldSpan(pinHead: 仅 Perfect/Great)`，`HoldMissVisual` 从 `TimeSec` 起 0.2s 落到 **0.391**。
+漏接：**不要**等到 Miss 时才松头——旧版额外等到 120ms 会把头钉在判定线，记 Miss 时按 `TimeSec` 瞬移到线左（看起来卡住再弹出）。当前按官机 Late Great **80ms** 结算，但未接住时仍应从头过线开始按 `LaneSpeed` 连续飞过，直到尾过 `OffLeft`。`LongPressController.OnControllerMiss` 是空桩；真正生效的是 **`LongPressHurt`** → `SpineActionController.SetAlpha(0.391)`（`m_HasAlpha`，DOTween **0.2s**）+ `LongPressNoteVisibleController.NoteTransparency`（头尾 `StarTransparencyCoroutine`、条子 `SliderTransparencyCoroutine`，条目标 alpha 约 0.55）。Unity：`Flight.TryHoldSpan(pinHead: 仅 Perfect/Great)`，`HoldMissVisual` 从 `TimeSec` 起 0.2s 落到 **0.391**。
 
 官机长条预制（`010204_air_nor_1`）：根 `SpineActionController`（`actionMode=12`，`SetLength` 拉条子，`rotateRuration` 转星，`rendererPreb` / `clipEffect` / `destroyEffect`）。`0102_air_renderer` 是 `SpriteRenderer` **`x02_*_body`，DrawMode.Simple**（跟时长拉伸五线谱条纹，不是 Repeat UV）。`scene_09` / `scene_10` 地面条子都没有同名 Sprite，只有 Texture2D `0902_road_body` / `1002_road_body`（1024×128）；缺这张时条子会把 `*_road_top` 星星拉长。空中条子仍是 Sprite `x02_air_body`（880×118）。子节点 `startParent/s00_press_top` 头星（尾星运行时克隆，local 0）。`0102_air_renderer` 世界 y=**1.20**，`0102_road_renderer` y=**−0.95**。不要改用通用轨（空中画面 y=1.125、地面 −1），星星下沿会埋进地板、看起来不在轨道中心。头星 Sprite `0102_*_top` **154×149、PPU 100、pivot (0.5, 0.5)**。不透明重心约在几何中心下方 **5.5/149**；`rotateRuration=1` 是 360°/s，绕这个重心转，绕四边形中心会把星星甩到轨道下沿。`fx_note` 是粒子（size 0.8、重力 5），**不是**音符图。
 
@@ -415,7 +415,7 @@ Well 成对，官机用 **`SpriteRenderer.flipX`**，缩放仍是 +1，**绕 piv
 | `Far_B` | 48.14 / 45s | 山影 `mountain`，层原点 x≈**−68.3** |
 | `Far_C` | 48.14 / 60s | 月亮 `planet_01` |
 
-近景坟、栅栏、雕像、墓门仍在 `Nearest` / `Mid_floor_*` / `Mid_B_all`。不要并回一个不滚的 `Far_all`。这些层名字不带 floor/near/mid/road，速度低于 2.5 也不能改成 5。月亮 `planet_glow` 同位置叠两张（9.23 和 7.85），去重必须比宽高，不能只比 xy。clip 不要把墓碑/叉/点当灯丢掉。
+近景坟、栅栏、雕像、墓门仍在 `Nearest` / `Mid_floor_*` / `Mid_B_all`。不要并回一个不滚的 `Far_all`。这些层名字不带 floor/near/mid/road，速度低于 2.5 也不能改成 5。`Far_A/dragon/dialog_box (3)` 扁平导出时排序为龙 **−63**、框 **−62**、子图 `smile01` **−61**；框和 `:)` 都必须在 `Mid_B` 雕像 **−51/−50** 后面。月亮 `planet_glow` 同位置叠两张（9.23 和 7.85），去重必须比宽高，不能只比 xy。clip 不要把墓碑/叉/点当灯丢掉。
 
 #### scene_10 初音舞台（对照 `gamescene_10` / `scene_10_miku`）
 
@@ -443,6 +443,10 @@ Well 成对，官机用 **`SpriteRenderer.flipX`**，缩放仍是 +1，**绕 piv
 layout **0 组 0 件**。几乎无景，跳过抽取与播放皮带。不要发明循环。
 
 **判定跟当前场景，不跟物件号。** `SceneTimeline.RulesFor(SceneAt)`：`scene_11` = 1K 单轨；`scene_01–10/12` = DFJK 双轨。`1O` 切走后立刻双轨，即使剩下的键仍是 `40/41/42`。反过来，scene_11 上普通 `01` 也按单轨打。物件外观仍按 ibms：`40–42` 永远地面 `1110/1111/1112_road`。
+
+官机 `config_others_assets_notedata` 的物件窗口不是统一的“Miss 兜底”：普通敌人、Boss、幽灵、Hold 头与连打头均为 Early/Perfect **50ms**、Early/Great **80ms**、Late/Perfect **50ms**、Late/Great **80ms**；超过 Late 80ms 应立即 Miss，不再额外停留到 120ms。接触收集类 `20/22/23` 的 `right_perfect_range` 为 **160ms**，到点后只允许在这 160ms 内按角色所在轨收集，窗口外即使随后换到同轨也不能补捡。播放端由 `Judge.For` 按物件类型给出窗口，`HitLane` 和自动 Miss 必须共用它。
+
+官机键盘方案来自 `globalconfigs_assets_inputstandlone` 的 `m_ButtonKeyEnties`：Default 空轨 `F/D`、地轨 `J/K`；Mode B 空轨 `D/K`、地轨 `F/J`；Mode C 空轨 `←/↑/Z`、地轨 `→/↓/X`；Mode D 空轨 `A/W/K`、地轨 `D/S/J`。Default/B/C 的 Reverse 方案是直接交换两组轨道。播放端 `HandleKey`、`HeldPlayLaneMask`、IMGUI 快速按键补获和物理键去重必须读取同一方案，禁止只改单击而把 Hold 继续写死为 DFJK。scene_11 单轨下任意当前方案按键均映射到同一判定排。
 
 | 特化 | 约定 |
 |------|------|
@@ -527,6 +531,45 @@ clip 去重后不要用「w<0.8 都是子灯」去丢片：`s12_middle_d_tile`�
 **来源与工具**：MelonLoader mod **MDSceneGrabber**（独立的 `Muse dash mod支持/MDSceneGrabber` 工程）。热键、F10 不限时、`AfterDumpCommand`、`tools/consolidate.py`、`素材整合/scene_alias.json`（`scene_05`→`城堡地图`）以该目录 **README.md** 为准，这里不复述。分析脚本 `tools/analyze_telemetry.py`，报告在 `out\telemetry_reports\`。另对照官包 notedata（des / prefab_name）。
 
 仍未录到（数值按规则推定）：`0I` 地面档 1/3、`0J` 地面/空中档 1。`0I` 空中档 1 官谱没有，不用录。
+
+### 1.5 游玩端物件判定（当前实现，改规则时必须同步 Runtime 与 Unity）
+
+判定时钟统一使用 `InputClock − info.delay − 玩家音频偏移`；同一份偏移只能扣一次。手动按键、自动 Miss、被动收集和 `EARLY/LATE` 都必须基于这个谱面时钟，不能各自再加一套经验补偿。
+
+| 类别 | Perfect | Great / 最晚结算 | 输入与连击 |
+|------|---------|------------------|------------|
+| 普通敌人、Boss、幽灵、`24`、Hold 头、连打头 | Early/Late **50ms** | Early/Late **80ms**；超过 Late 80ms 立即 Miss | 消耗一次对应轨道按下沿；普通物件按时间顺序消费，不能越过前一颗去打更近的后一颗 |
+| `10/22/23` 被动收集物 | 到点后同轨接触即 Perfect | 只开放 Late **160ms**；无 Early 窗 | 不消耗攻击键、不计连击；帧更新造成的接触时差不生成 `EARLY/LATE` |
+| `0H/18` 齿轮 | 无 Perfect/Great | `TimeSec` 当帧采样；超过 **1/30s** 未处理只能 PASS | 异轨 PASS、同轨撞击；两者均不进准确率，撞击也不记 Miss、不清 Combo |
+| Hold 持续 | 头部沿上表 | 松键容错 **80ms**，超时断 Hold | 头、尾各一判定/连击/计分单元；同轨 D↔F、J↔K 可在容错内换指 |
+| `0G/16/17` 连打持续 | 头部沿普通攻击窗 | 接住后目标节拍固定 **80ms/击** | 上下轨按键均可续打；每次物理按下沿只增加一击，长按按键不会自动连发 |
+
+键盘输入必须按“物理键”独立锁定，而不是按整条轨道锁定：J 未松开时 K 仍可触发下一击，适合 J/K 或 D/F 轮流连打；同一物理键只有收到 KeyUp 后才能再次触发。Unity `Input.GetKeyDown` 与 IMGUI `KeyDown` 只允许合并为同一次按下，系统长按重复不能变成连续单击。切出窗口时清空按键锁，避免漏收 KeyUp 后整局失灵。键位方案与 scene_11 单轨规则见上文 §scene_11。
+
+#### 1.5a 逐物件运行时约定
+
+- **幽灵 `21`**：判定前最后 **150ms** 从 alpha 1 线性隐到 0。视觉隐藏不等于删除判定，手动输入仍在 ±80ms 攻击窗内命中；全局事件 `1J` 隐藏谱面时才暂停该帧输入/自动 Miss。
+- **双押 `0E`**：物件本体始终走各自 `pathway`，不能画到中线，也不能在 Miss/PASS 后卡在判定圈。同刻上下轨两个普通敌人只有在两边都成功判定后才合成一次双押角色表现；只命中一边不能误播 `double_hit`。显式 `0E` 和合成双押都固定角色根在地面，由 `double_hit_1/2` 内部的 `girl_Y` 抬到中轨；外层禁止再叠加上轨高度。双押、双 Hold 都不生成副轨虚影。
+- **Hold `0F`**：接住后头星钉 `HitX`、条子从左侧裁短，尾点结算后直接回 `run`。未接住时头星从过线起连续向左飞，不得先卡线再瞬移；0.2s 淡到 alpha **0.391**。上轨 Hold 结束后从当前最高点用约 **100ms** SmoothStep 平滑落地，不重播 `jump`、不刷新额外滞空；双 Hold 从中轨按 `down_hit` 时长平滑回地面。条内 `24` 必须用同轨另一枚按键独立击打，正在按住 Hold 不会自动吃掉；`23` 才是接触收集。
+- **连打 `0G/16/17`**：物件与角色都固定两轨中线，不能按谱面 `pathway` 跳上轨或落地。连打数显示实际 `MashIndex`；Perfect 动作轮换 `air/road_hit_perfect_1..4`，Great 轮换 `*_great_1..3`，到末尾循环。`16/17` 驱动 Boss 本体但不再生成 x04 飞近；`0G` 才显示普通连打物件。
+- **齿轮 `0H/18`**：到 `TimeSec` 只采样一次角色轨道。长按期间条内齿轮按擦身 PASS，不注入 `jump/down_hit`；越过判定圈后不能因玩家随后换轨而补判受击。撞击播放 x03/x09 `destroy`，根节点仍按原车道速度左移并保留约 16 帧碎裂；PASS 不播碎裂，物件继续飞过。PASS 判定字显示在对侧轨。
+- **收集物 `10/22/23` 与 Hold 星 `24`**：前三者按角色或有效 Hold 所在轨接触收集，不抢占 D/F/J/K 的攻击消费顺序；漏掉不播受伤。`24` 只复用 Music 外观分类，判定、连击和计分都按主动攻击物件处理。
+
+### 1.6 角色动作映射（兔女郎/普通战斗包）
+
+- 地面首次命中上轨敌人：直接播官机 `char_uphit → air_hit_perfect_4`，不用 `jump`，也不在同一物件后再排队一段 `air_hit`；下一颗同轨敌人才从普通 `air_hit_*_1` 序列开始。空打上轨和上轨收集物仍可播 `jump`。
+- 空中首次命中地轨敌人：只播 `char_downhit → down_hit`。`down_hit` 已含下劈和命中反馈，禁止再衔接 `road_hit`，否则同一物件看起来被击打两次。地轨普通命中继续走 `road_hit_perfect_1..4` / `road_hit_great_1..3`；空中普通命中走对应 `air_hit_*`。
+- `0G/16/17` 连打与 `11/12` Boss 近战均锁中轨；`0E`/同刻上下轨双押用 `double_hit_1/2` 锁中轨。中轨姿态锁优先于残留 Hold 插值，防止动作被固定在上轨或下轨。
+- Hold 主角色始终循环 `press`。只有“有效 Hold 内、非主 Hold 轨”的 Monster/Boss/Ghost/Music 单击可使用 `char_*_ghost` 播副轨打击；Masher、`0E`、齿轮、红心、Hold 本体、空打均不得生成虚影。Hold 结束或断条时立即回收虚影。
+- 受击按上下文分流：地面 `hurt`、跳跃 `jump_hurt`、空中攻击 `air_hit_hurt`、上轨 Hold `air_press_hurt`。手动模式只按判定批开始前的实际角色轨道决定是否撞击，不能读取漏击物件的 `pathway` 强制把角色搬到另一轨。
+
+### 1.7 连击、10 万分与曲终结算
+
+总分以整张谱的判定单元归一化到 **100000**：Perfect=1、Great=0.5、Miss=0。普通物件/收集物/`24` 各 1 单元；Hold 头尾各 1，共 2；连打满分单元数为 `1 + floor(length / 0.08)`；齿轮 PASS/撞击均为 0 单元，不参与准确率。最终 `score = round(所得权重 / 总权重 × 100000)`，显示准确率与最大连击。
+
+连击只统计 Monster、Boss、Ghost、Hold 头尾、连打每击和 `24`；`10/22/23` 与齿轮不计连击。普通 Miss 清零 Combo；齿轮撞击是受伤事件，不增加 Miss、不清 Combo。`EARLY/LATE + 毫秒` 只来自手动攻击输入：偏差绝对值 ≤25ms 的亮 P 暂不显示，Miss、PASS、Hold 尾、连打内部拍和被动收集也不显示。
+
+曲目和音频都结束后才开始结算序列。有效谱面 `Misses == 0` 时先播放 **2.0s** `FULL COMBO!`，再开成绩页；满 100000 显示 AP。普通主题使用官机逐字图，基础字距 **14px**、`FULL/COMBO` 词距 70px、`O/!` 间距 18px，全部间距必须计入总宽后再居中；东方、DJMAX、明日方舟按主题资源单独绘制。
 
 ---
 

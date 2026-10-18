@@ -24,6 +24,7 @@ public sealed partial class PlayDirector
         _girlActionAt = now;
         _girlActionUntil = until;
         _girlActionLoop = loop;
+        _girlActionDuration = _girl?.Skeleton?.Data?.FindAnimation(clip)?.Duration ?? 0f;
     }
 
     /// <summary>
@@ -143,7 +144,8 @@ public sealed partial class PlayDirector
                 return;
             var wasAirAttack = !string.IsNullOrEmpty(_girlAction)
                 && _girlAction.StartsWith("air_hit_", System.StringComparison.Ordinal);
-            var wasAirPress = hurtAir && (_girlHoldMask & 2) != 0;
+            var wasAirPress = hurtAir && (((_girlHoldMask & 2) != 0)
+                || (now < _girlHoldExitUntil && (_girlHoldExitMask & 2) != 0));
             if (hurtAir) BeginGirlAirborne(now);
             else EndGirlAirborne();
             // 官机角色包区分四种受击上下文：地面碰撞 hurt、跳跃碰撞
@@ -170,14 +172,16 @@ public sealed partial class PlayDirector
 
         if (hit.Grade is not (Judge.Grade.Perfect or Judge.Grade.Great)) return;
 
+        // Masher 无论是否与 Hold 时间重叠，都只能由主角色播放连打；
+        // 先清掉上一击残留的 Hold 虚影，再进入下面的 Hold/连打分流。
+        if (n.Category == NoteCategory.Masher)
+            HideGirlGhost();
+
         if (_girlHoldMask != 0)
         {
             // 官机按输入轨分流：主轨继续 press；副轨敌人和条内 23 音符由
             // *_ghost 播放正常 hit。第二根 Hold 只切双押位置，不生成虚影。
-            var secondaryHit = n.Category != NoteCategory.Heart
-                && n.Category != NoteCategory.Gear
-                && n.Category != NoteCategory.Hold
-                && n.BmsId != "0E"
+            var secondaryHit = GirlHoldGhostCandidate(n)
                 && n.Pathway != _girlPrimaryHoldLane;
             if (secondaryHit)
                 PlayGirlHoldGhost(hit, now);
@@ -225,26 +229,14 @@ public sealed partial class PlayDirector
             return;
         }
 
-        // 官机从空中接地面敌人时先播 down_hit，并从当前高度快速下砍落地；
-        // 不能直接清空高度后切 road_hit，否则会出现生硬瞬移。
-        var groundEnemy = n.Pathway != 1 && n.BmsId != "0E"
-            && n.BmsId is not ("11" or "12")
-            && n.Category is NoteCategory.Monster or NoteCategory.Boss
-                or NoteCategory.Ghost;
-        if (groundEnemy && now < _girlAirborneUntil)
-        {
-            BeginGirlDownStrike(now);
-            StartGirlAction(ExistingGirlClip("down_hit", "road_hit_perfect_1", "run"), now);
-            return;
-        }
-
         if (n.Category == NoteCategory.Hold)
         {
             var tail = now >= (float)n.EndSec - 0.02f;
             if (tail)
             {
-                // 官机成功收尾无论上下轨都直接回 run；air_press_end 属于其它
-                // 中断/受伤路径，自动 Perfect Hold 的实录中不会在尾点出现。
+                // 官机成功收尾直接回 run；上轨 Hold 的尾点从当前高度立即
+                // 平滑下落。实际轨道交接已由 BeginGirlHitBatch
+                // 按退出前 mask 一次性处理，避免双押中的上轨尾点错误续空。
                 StartGirlAction(ExistingGirlClip("run"), now);
             }
             else
@@ -325,6 +317,32 @@ public sealed partial class PlayDirector
                 : 0.15f;
             _girlMeleePoseUntil = now + Mathf.Max(0.05f, meleeDuration);
             StartGirlAction(meleeAttack, now);
+            return;
+        }
+
+        // 使用本批判定开始前的轨道，而不是前一个收集物刚写入的新状态。
+        // 这样同刻的上轨 Music + 敌人仍会从地面进入专用上挑，而不会因
+        // Music 先播 jump 就把敌人误判成“已经在空中”。
+        var wasAir = _girlDodgePoseAir;
+        if (n.Pathway == 1 && !wasAir)
+        {
+            // 官机兔女郎 actionData：char_uphit 固定映射 air_hit_perfect_4；
+            // char_bighit 才随机映射 double_hit_1/2。两者挥砍姿势相近，
+            // 但双押带中轨定位，不能复用。首次上轨命中也不消耗后续
+            // char_jumphit 的连击序号，因此下一颗空中敌人仍从 *_1 开始。
+            var uppercut = ExistingGirlClip(
+                "air_hit_perfect_4", "air_hit_perfect_1", "air_hit_great_1", "jump");
+            BeginGirlAirborne(now);
+            StartGirlAction(uppercut, now);
+            return;
+        }
+        if (n.Pathway != 1 && wasAir)
+        {
+            // 官机 actionData：char_downhit 只映射 down_hit。该片段已包含
+            // 下劈与命中反馈，不能再排队衔接 road_hit，否则同一物件会像
+            // 连续击打两次。特殊换轨也不消耗普通地轨连击序号。
+            BeginGirlDownStrike(now);
+            StartGirlAction(ExistingGirlClip("down_hit", "run"), now);
             return;
         }
 

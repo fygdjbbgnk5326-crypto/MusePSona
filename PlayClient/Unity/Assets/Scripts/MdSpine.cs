@@ -18,6 +18,10 @@ public static class MdSpine
     }
 
     static readonly Dictionary<string, Pack> Cache = new();
+    static readonly Dictionary<SkeletonData, string[]> HurtClips = new();
+    static readonly Dictionary<SkeletonData, string> ComboStartClips = new();
+    static readonly Dictionary<SkeletonData, string> ComboIdleClips = new();
+    static readonly Dictionary<SkeletonData, string> ComboEndClips = new();
     static float _scale = 0.005f;
     static bool _ready;
     static Shader _shader;
@@ -340,29 +344,34 @@ public static class MdSpine
     public static string PickHurt(SkeletonData data, int hitIndex)
     {
         if (data == null) return null;
-        var names = new List<string>();
-        for (var n = 1; n <= 8; n++)
+        if (!HurtClips.TryGetValue(data, out var cached))
         {
-            var clip = FindClip(data, "hurt_" + n.ToString(CultureInfo.InvariantCulture));
-            if (clip == null) break;
-            if (RestoresIdleBody(data, clip)) continue;
-            names.Add(clip);
-        }
-        if (names.Count == 0)
-        {
-            foreach (var a in data.Animations)
+            var names = new List<string>();
+            for (var n = 1; n <= 8; n++)
             {
-                var nm = a.Name ?? "";
-                if (!nm.StartsWith("hurt")) continue;
-                if (RestoresIdleBody(data, nm)) continue;
-                names.Add(nm);
+                var clip = FindClip(data, "hurt_" + n.ToString(CultureInfo.InvariantCulture));
+                if (clip == null) break;
+                if (RestoresIdleBody(data, clip)) continue;
+                names.Add(clip);
             }
-            names.Sort((x, y) => HurtIndex(x).CompareTo(HurtIndex(y)));
+            if (names.Count == 0)
+            {
+                foreach (var a in data.Animations)
+                {
+                    var nm = a.Name ?? "";
+                    if (!nm.StartsWith("hurt")) continue;
+                    if (RestoresIdleBody(data, nm)) continue;
+                    names.Add(nm);
+                }
+                names.Sort((x, y) => HurtIndex(x).CompareTo(HurtIndex(y)));
+            }
+            cached = names.ToArray();
+            HurtClips[data] = cached;
         }
-        if (names.Count == 0) return null;
-        var i = hitIndex % names.Count;
-        if (i < 0) i += names.Count;
-        return names[i];
+        if (cached.Length == 0) return null;
+        var i = hitIndex % cached.Length;
+        if (i < 0) i += cached.Length;
+        return cached[i];
     }
 
     /// <summary>1004 的 hurt_4 把主 body 挂回去，是待机不是挨打。</summary>
@@ -408,24 +417,30 @@ public static class MdSpine
     public static string PickComboClip(SkeletonData data)
     {
         if (data == null) return null;
-        foreach (var want in new[] { "start", "in", "animation", "combo" })
-        {
-            var hit = FindClip(data, want);
-            if (hit != null) return hit;
-        }
-        return data.Animations.Count > 0 ? data.Animations.Items[0].Name : null;
+        if (ComboStartClips.TryGetValue(data, out var cached)) return cached;
+        cached = FindClip(data, "start") ?? FindClip(data, "in")
+            ?? FindClip(data, "animation") ?? FindClip(data, "combo")
+            ?? (data.Animations.Count > 0 ? data.Animations.Items[0].Name : null);
+        ComboStartClips[data] = cached;
+        return cached;
     }
 
     public static string PickComboIdle(SkeletonData data)
     {
         if (data == null) return null;
-        return FindClip(data, "standby") ?? FindClip(data, "stand") ?? FindClip(data, "idle");
+        if (ComboIdleClips.TryGetValue(data, out var cached)) return cached;
+        cached = FindClip(data, "standby") ?? FindClip(data, "stand") ?? FindClip(data, "idle");
+        ComboIdleClips[data] = cached;
+        return cached;
     }
 
     public static string PickComboEnd(SkeletonData data)
     {
         if (data == null) return null;
-        return FindClip(data, "end") ?? FindClip(data, "out");
+        if (ComboEndClips.TryGetValue(data, out var cached)) return cached;
+        cached = FindClip(data, "end") ?? FindClip(data, "out");
+        ComboEndClips[data] = cached;
+        return cached;
     }
 
     static float ReadScale(string dir)
@@ -564,7 +579,13 @@ public sealed class MdSpineView : MonoBehaviour
     string _clipName;
     readonly List<PageDraw> _pages = new();
     readonly SkeletonClipping _clipper = new SkeletonClipping();
+    readonly List<Skin> _skinScratch = new();
+    readonly List<Skin.SkinEntry> _skinEntryScratch = new();
+    readonly Dictionary<int, Attachment> _officialFaceCache = new();
+    string _packPrefix;
+    bool _packPrefixReady;
     static readonly int[] QuadTris = { 0, 1, 2, 2, 3, 0 };
+    static readonly string[] OfficialFaceSlots = { "head", "eyes1", "eyes2", "eye" };
 
     sealed class PageDraw
     {
@@ -1258,6 +1279,7 @@ public sealed class MdSpineView : MonoBehaviour
                 if (tex != null)
                 {
                     reg.ComputeWorldVertices(slot.Bone, _world, 0);
+                    AlignKnownFx(nm, sn, _world, 8);
                     if (keepStrip || keepCore || !StripLike(_world, 8))
                         Push(Bucket(tex, beamUnderFace && BeamBehind(nm, sn), additive, hullFront), slot, _world, 8, reg.UVs, QuadTris, QuadTris.Length, Tint(slot, reg.R, reg.G, reg.B, reg.A), IsBody(nm, sn) || Hit(nm, sn, "ufo"), ref bMinX, ref bMinY, ref bMaxX, ref bMaxY, ref bodyAny);
                 }
@@ -1270,6 +1292,7 @@ public sealed class MdSpineView : MonoBehaviour
                     var count = mesh.WorldVerticesLength;
                     if (_world.Length < count) _world = new float[count];
                     mesh.ComputeWorldVertices(slot, _world);
+                    AlignKnownFx(nm, sn, _world, count);
                     if (keepStrip || keepCore || !StripLike(_world, count))
                         Push(Bucket(tex, beamUnderFace && BeamBehind(nm, sn), additive, hullFront), slot, _world, count, mesh.UVs, mesh.Triangles, mesh.Triangles.Length, Tint(slot, mesh.R, mesh.G, mesh.B, mesh.A), IsBody(nm, sn) || Hit(nm, sn, "ufo"), ref bMinX, ref bMinY, ref bMaxX, ref bMaxY, ref bodyAny);
                 }
@@ -1307,6 +1330,19 @@ public sealed class MdSpineView : MonoBehaviour
                 VisualCenter = new Vector3((minX + maxX) * 0.5f, (minY + maxY) * 0.5f, 0f);
             }
         }
+    }
+
+    static void AlignKnownFx(string attachmentName, string slotName, float[] vertices, int count)
+    {
+        // 0401 的灯体 car_light_fx 与光影 car_light_fx_shadows 共用一根骨，
+        // 但后者 297×228 的可见光斑重心比附件中心低约 0.47 世界单位。
+        // 官机画面中光斑只略低于灯体；自绘 Mesh 因此需要补偿 0.40，使两组
+        // 灯影贴回保险杠，同时保留约 0.07 的向下扩散。车身和骨骼动画不动。
+        if (!string.Equals(attachmentName, "car_light_fx_shadows", System.StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(slotName, "car_light_fx2", System.StringComparison.OrdinalIgnoreCase))
+            return;
+        for (var i = 1; i < count; i += 2)
+            vertices[i] += 0.40f;
     }
 
     bool HasHexieVariant()
@@ -1479,13 +1515,16 @@ public sealed class MdSpineView : MonoBehaviour
 
     void EnsureOfficialFace()
     {
-        string[] slots = { "head", "eyes1", "eyes2", "eye" };
-        foreach (var sn in slots)
+        foreach (var sn in OfficialFaceSlots)
         {
             var slot = Skeleton.FindSlot(sn);
             if (slot == null) continue;
             if (string.IsNullOrEmpty(slot.Data.AttachmentName) && slot.Attachment == null) continue;
-            var pick = PickSlotAttachment(slot, Leaf(sn) != "eye");
+            if (!_officialFaceCache.TryGetValue(slot.Data.Index, out var pick))
+            {
+                pick = PickSlotAttachment(slot, Leaf(sn) != "eye");
+                if (pick != null) _officialFaceCache[slot.Data.Index] = pick;
+            }
             if (pick == null) continue;
             if (pick is MeshAttachment ma && ma.WorldVerticesLength < 6) continue;
             slot.Attachment = pick;
@@ -1497,7 +1536,7 @@ public sealed class MdSpineView : MonoBehaviour
     Attachment PickSlotAttachment(Slot slot, bool preferHexie)
     {
         Attachment hexie = null, plain = null, any = null;
-        var buf = new List<Skin.SkinEntry>();
+        var buf = _skinEntryScratch;
         foreach (var skin in CollectSkins())
         {
             buf.Clear();
@@ -1541,6 +1580,8 @@ public sealed class MdSpineView : MonoBehaviour
 
     string PackPrefix()
     {
+        if (_packPrefixReady) return _packPrefix;
+        _packPrefixReady = true;
         for (var i = 0; i < Skeleton.Slots.Count; i++)
         {
             var att = Skeleton.Slots.Items[i].Attachment;
@@ -1549,7 +1590,7 @@ public sealed class MdSpineView : MonoBehaviour
             else if (att is RegionAttachment ra) path = ra.Path ?? ra.Name;
             if (string.IsNullOrEmpty(path)) continue;
             var slash = path.LastIndexOf('/');
-            if (slash > 0) return path.Substring(0, slash + 1);
+            if (slash > 0) return _packPrefix = path.Substring(0, slash + 1);
         }
         var n = Skeleton.Data.Name ?? "";
         if (n.Length >= 4 && char.IsDigit(n[0]))
@@ -1566,14 +1607,14 @@ public sealed class MdSpineView : MonoBehaviour
                         if (nm.StartsWith(plain, System.StringComparison.OrdinalIgnoreCase)
                             && nm.IndexOf("images_air", System.StringComparison.OrdinalIgnoreCase) < 0
                             && nm.IndexOf("images_road", System.StringComparison.OrdinalIgnoreCase) < 0)
-                            return plain;
+                            return _packPrefix = plain;
                     }
                 }
             }
             var lane = n.IndexOf("road", System.StringComparison.OrdinalIgnoreCase) >= 0 ? "images_road/" : "images_air/";
-            return code + "/" + lane;
+            return _packPrefix = code + "/" + lane;
         }
-        return "";
+        return _packPrefix = "";
     }
 
     AtlasRegion AliasRegion(string leaf)
@@ -1650,7 +1691,8 @@ public sealed class MdSpineView : MonoBehaviour
 
     List<Skin> CollectSkins()
     {
-        var skins = new List<Skin>();
+        var skins = _skinScratch;
+        skins.Clear();
         if (Skeleton.Skin != null) skins.Add(Skeleton.Skin);
         if (Skeleton.Data.DefaultSkin != null && !skins.Contains(Skeleton.Data.DefaultSkin))
             skins.Add(Skeleton.Data.DefaultSkin);
@@ -1676,7 +1718,7 @@ public sealed class MdSpineView : MonoBehaviour
             var a = Skeleton.GetAttachment(slot.Data.Index, stem);
             if (IsPlain(a)) return a;
         }
-        var buf = new List<Skin.SkinEntry>();
+        var buf = _skinEntryScratch;
         foreach (var skin in skins)
         {
             buf.Clear();
@@ -1930,6 +1972,14 @@ public sealed class MdSpineView : MonoBehaviour
     void OnDestroy()
     {
         foreach (var p in _pages)
+        {
             if (p.Mesh != null) Destroy(p.Mesh);
+            if (p.Rend != null && p.Rend.sharedMaterial != null)
+            {
+                Destroy(p.Rend.sharedMaterial);
+                p.Rend.sharedMaterial = null;
+            }
+        }
+        _pages.Clear();
     }
 }

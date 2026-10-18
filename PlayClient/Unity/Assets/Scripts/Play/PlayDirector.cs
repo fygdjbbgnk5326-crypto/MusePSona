@@ -13,6 +13,32 @@ public sealed partial class PlayDirector : MonoBehaviour
     [SerializeField] float worldScale = 1f;
     [SerializeField] bool autoplay = true;
 
+    const string AudioOffsetPrefsKey = "MusePSona.AudioOffsetMs";
+    const string AdvancedJudgePrefsKey = "MusePSona.ShowAdvancedJudge";
+    const string KeyboardLayoutPrefsKey = "MusePSona.KeyboardLayout";
+
+    enum KeyboardLayout
+    {
+        Default,
+        DefaultReverse,
+        ModeB,
+        ModeBReverse,
+        ModeC,
+        ModeCReverse,
+        ModeD
+    }
+
+    // 官机 globalconfigs/InputStandlone 的键盘方案。Reverse 只交换上下轨，
+    // 不改变每组内部顺序；Space 是 Fever，本播放端仍保留作暂停。
+    static readonly KeyCode[] KeysDefaultAir = { KeyCode.D, KeyCode.F };
+    static readonly KeyCode[] KeysDefaultGround = { KeyCode.J, KeyCode.K };
+    static readonly KeyCode[] KeysModeBAir = { KeyCode.D, KeyCode.K };
+    static readonly KeyCode[] KeysModeBGround = { KeyCode.F, KeyCode.J };
+    static readonly KeyCode[] KeysModeCAir = { KeyCode.Z, KeyCode.LeftArrow, KeyCode.UpArrow };
+    static readonly KeyCode[] KeysModeCGround = { KeyCode.X, KeyCode.RightArrow, KeyCode.DownArrow };
+    static readonly KeyCode[] KeysModeDAir = { KeyCode.A, KeyCode.W, KeyCode.K };
+    static readonly KeyCode[] KeysModeDGround = { KeyCode.D, KeyCode.S, KeyCode.J };
+
     static int s_map;
     public static PlayDirector Live { get; private set; }
 
@@ -31,8 +57,17 @@ public sealed partial class PlayDirector : MonoBehaviour
     readonly Dictionary<int, Actor> _actors = new();
     readonly HashSet<int> _liveActorIds = new();
     readonly List<int> _deadActorIds = new();
+    readonly List<PlayNote> _visibleNotes = new();
     readonly List<PlaySession.JudgeHit> _hits = new();
     readonly List<Transform> _fx = new();
+    readonly List<Transform> _fxPool = new();
+    readonly List<Renderer> _rendererScratch = new();
+    sealed class HitFxVisual
+    {
+        public readonly List<Material> Materials = new();
+    }
+    readonly Dictionary<Transform, HitFxVisual> _hitFxVisuals = new();
+    Camera _mainCamera;
     Shader _shader;
     Material _matRoad;
     Material _matAir;
@@ -59,6 +94,13 @@ public sealed partial class PlayDirector : MonoBehaviour
     GUIStyle _gradeStyle;
     GUIStyle _hudStyle;
     GUIStyle _clockStyle;
+    GUIStyle _scoreHudStyle;
+    GUIStyle _scoreTitleFallbackStyle;
+    GUIStyle _offsetCenterStyle;
+    string _hudStatusText = "";
+    string _hudClockText = "";
+    string _hudComboText = "";
+    float _hudTextNextAt;
     Judge.Grade _flashGrade;
     float _flashGradeUntil;
     float _flashAirUntil;
@@ -67,6 +109,9 @@ public sealed partial class PlayDirector : MonoBehaviour
     bool _waitClip;
     float _clockOrigin;
     Coroutine _loadAudio;
+    Coroutine _switchSong;
+    int _songSwitchSerial;
+    int _songTargetIndex = -1;
     readonly List<string> _songFiles = new();
     int _songIndex;
     int _keyFrame = -1;
@@ -76,6 +121,19 @@ public sealed partial class PlayDirector : MonoBehaviour
     readonly HashSet<KeyCode> _playKeysHeld = new();
     int _inputClockFrame = -1;
     float _inputClockNow;
+    int _audioOffsetMs;
+    float _audioOffsetNoticeUntil;
+    bool _audioOffsetDirty;
+    KeyCode _audioOffsetHoldKey = KeyCode.None;
+    float _audioOffsetNextRepeatAt;
+    bool _audioOffsetPanelOpen;
+    bool _audioOffsetWasPaused;
+    bool _audioOffsetResumeMusic;
+    AudioSource _audioOffsetTestAudio;
+    AudioClip _audioOffsetTestClip;
+    double _audioOffsetTestStartDsp;
+    bool _showAdvancedJudge = true;
+    KeyboardLayout _keyboardLayout;
     string _scene = "";
     MdLooks.Pack _looks;
     Actor _boss;
@@ -84,6 +142,7 @@ public sealed partial class PlayDirector : MonoBehaviour
     bool _bossHomeReady;
     bool _bossHomeTrack;
     string _bossHud = "";
+    float _bossHudNextAt;
     MdSpineView _comboSpine;
     Transform _comboRoot;
     Transform _comboNumRoot;
@@ -94,6 +153,10 @@ public sealed partial class PlayDirector : MonoBehaviour
     string _comboScene = "";
     bool _comboBreak;
     bool _comboDjMax;
+    readonly List<Transform> _comboDigitViews = new();
+    float[] _comboDigitSteps = System.Array.Empty<float>();
+    Texture2D[] _comboDigitTextures = System.Array.Empty<Texture2D>();
+    float[] _comboDigitHeights = System.Array.Empty<float>();
     static AnimationCurve _comboIn;
     static AnimationCurve _comboIdleX;
     static AnimationCurve _comboIdleY;
@@ -105,10 +168,19 @@ public sealed partial class PlayDirector : MonoBehaviour
     float _hitsPopAt;
     float _hitsBurstAt;
     bool _hitsLeaving;
+    readonly List<Transform> _hitsDigitViews = new();
+    float[] _hitsDigitSteps = System.Array.Empty<float>();
+    Texture2D[] _hitsDigitTextures = System.Array.Empty<Texture2D>();
+    float[] _hitsDigitHeights = System.Array.Empty<float>();
+    Vector3 _hitsBurstFit = Vector3.one;
+    int _liveMashFrame = -1;
+    int _liveMashCount;
+    bool _liveMashHitting;
     float _camX;
     float _camSize = Flight.CameraSize;
     MdSceneBg.View _bg;
     string _bgScene = "";
+    float _nextBgLayoutCheckAt;
     Transform _laneRoadT;
     Transform _laneAirT;
     Transform _laneMidT;
@@ -127,6 +199,8 @@ public sealed partial class PlayDirector : MonoBehaviour
     void OnEnable() => Live = this;
     void OnDisable()
     {
+        CloseAudioOffsetPanel(false);
+        SaveAudioOffset();
         DropGirl();
         if (Live == this) Live = null;
     }
@@ -134,6 +208,17 @@ public sealed partial class PlayDirector : MonoBehaviour
     void Start()
     {
         autoplay = true;
+        _showAdvancedJudge = PlayerPrefs.GetInt(AdvancedJudgePrefsKey, 1) != 0;
+        _keyboardLayout = (KeyboardLayout)Mathf.Clamp(
+            PlayerPrefs.GetInt(KeyboardLayoutPrefsKey, (int)KeyboardLayout.Default),
+            (int)KeyboardLayout.Default, (int)KeyboardLayout.ModeD);
+        var savedAudioOffset = PlayerPrefs.GetInt(AudioOffsetPrefsKey, 0);
+        _audioOffsetMs = AudioOffset.Snap(savedAudioOffset);
+        if (_audioOffsetMs != savedAudioOffset)
+        {
+            PlayerPrefs.SetInt(AudioOffsetPrefsKey, _audioOffsetMs);
+            _audioOffsetDirty = true;
+        }
         if (s_map is >= 1 and <= 5) difficulty = s_map;
         SetupStage();
         CollectSongs();
@@ -201,6 +286,10 @@ public sealed partial class PlayDirector : MonoBehaviour
         }
         var uri = new System.Uri(path).AbsoluteUri;
         using var req = UnityWebRequestMultimedia.GetAudioClip(uri, type);
+        // 切歌时不要在主线程一次性解码整首音频。本地文件也使用
+        // Unity 的流式解码，首帧只需准备少量数据即可开始播放。
+        if (req.downloadHandler is DownloadHandlerAudioClip audioHandler)
+            audioHandler.streamAudio = true;
         yield return req.SendWebRequest();
         if (req.result != UnityWebRequest.Result.Success)
         {
@@ -263,7 +352,7 @@ public sealed partial class PlayDirector : MonoBehaviour
         if (Live != null) Live.CycleMap(delta);
     }
 
-    float Clock()
+    float RawAudioClock()
     {
         if (_audio != null && _audio.clip != null && (_audio.isPlaying || _paused))
         {
@@ -277,6 +366,8 @@ public sealed partial class PlayDirector : MonoBehaviour
         if (_waitClip) return 0f;
         return Time.time - _clockOrigin;
     }
+
+    float Clock() => AudioOffset.Apply(RawAudioClock(), _audioOffsetMs);
 
     float InputClock()
     {
@@ -296,15 +387,45 @@ public sealed partial class PlayDirector : MonoBehaviour
             Debug.Log("没有 map" + map + "，可选 " + string.Join("/", _song.Maps.Select(m => "map" + m)));
             return;
         }
+        ApplySession(new PlaySession(_song, map), map);
+    }
+
+    void ApplySession(PlaySession nextSession, int map)
+    {
+        if (nextSession == null) return;
+        var nextScene = _forceScene.Length > 0 ? _forceScene : nextSession.SceneAt(0f);
+        var keepBackground = _bg != null
+            && string.Equals(SceneTimeline.Norm(_bgScene), SceneTimeline.Norm(nextScene),
+                System.StringComparison.OrdinalIgnoreCase)
+            && !MdSceneBg.LayoutStale(nextScene);
         s_map = map;
         difficulty = map;
         ClearActors();
-        _session = new PlaySession(_song, map);
+        _session = nextSession;
         ResetScreenFxState();
+        ResetResultState();
+        // 重开、换难度或切歌时丢弃上一局尚未收到 KeyUp 的物理键，
+        // 否则新谱第一次按下同一键会被去重逻辑误判为仍在按住。
+        _playKeysHeld.Clear();
+        _playInputFrame = -1;
+        _playHitLaneMask = 0;
         _paused = false;
-        MdSceneBg.Drop(_bg);
-        _bg = null;
-        _bgScene = "";
+        if (keepBackground)
+        {
+            // 同场景换歌/换难度只重置时间轴，不重新解码 PNG、创建
+            // 数百个背景节点与材质。
+            _bg.ScrollY = 0f;
+            _bg.BeltReady = false;
+            _bg.BeltOrigin = 0f;
+            _bg.BeltChart = 0f;
+            _bg.BeltHeld = 0f;
+        }
+        else
+        {
+            MdSceneBg.Drop(_bg);
+            _bg = null;
+            _bgScene = "";
+        }
         if (_audio != null && _audio.clip != null)
         {
             _audio.Stop();
@@ -315,12 +436,9 @@ public sealed partial class PlayDirector : MonoBehaviour
         _inputClockFrame = -1;
         _flashGradeUntil = 0f;
         ClearGirlAction();
-        _scene = "";
+        if (!keepBackground) _scene = "";
         if (_session != null)
-        {
-            var scene = _forceScene.Length > 0 ? _forceScene : _session.SceneAt(0f);
-            TintScene(scene);
-        }
+            TintScene(nextScene);
     }
 
     void ClearActors()
@@ -331,7 +449,7 @@ public sealed partial class PlayDirector : MonoBehaviour
         _actors.Clear();
         foreach (var t in _fx)
         {
-            if (t != null) Destroy(t.gameObject);
+            if (t != null) RecycleHitFx(t);
         }
         _fx.Clear();
     }
@@ -349,9 +467,12 @@ public sealed partial class PlayDirector : MonoBehaviour
         if (!_paused && !_waitClip)
         {
             if (autoplay) _session.Autoplay(now);
-            else _session.TickManual(now, GirlIsAir(), _girlHoldMask, HeldPlayLaneMask(now));
+            else _session.TickManual(now, GirlCollisionIsAir(now - _session.DelaySec),
+                _girlHoldMask, HeldPlayLaneMask(now));
         }
+        _session.FinalizeIfDue(now);
         FlushHits();
+        TickResult(now);
         PulseLane(_airLane, _matLaneAir, Time.unscaledTime < _flashAirUntil, new Color(0.45f, 0.95f, 1f));
         PulseLane(_roadLane, _matLaneRoad, Time.unscaledTime < _flashRoadUntil, new Color(1f, 0.55f, 0.82f));
         AnimateJudge(_airJudge, Time.unscaledTime < _flashAirUntil, true);
@@ -359,8 +480,10 @@ public sealed partial class PlayDirector : MonoBehaviour
 
         var chartNow = now - _session.DelaySec;
         _liveActorIds.Clear();
-        foreach (var n in _session.Visible(now))
+        _session.CollectVisible(now, _visibleNotes);
+        for (var visibleIndex = 0; visibleIndex < _visibleNotes.Count; visibleIndex++)
         {
+            var n = _visibleNotes[visibleIndex];
             // 11/12 近战、16/17 连打的判定点就是本体（close_atk / multi_atk 冲到判定线），再画物件会叠在中线。
             if (BossTimeline.BodyIsTarget(n.BmsId)) continue;
             _liveActorIds.Add(n.Id);
@@ -398,26 +521,20 @@ public sealed partial class PlayDirector : MonoBehaviour
                 t.localScale += new Vector3(0.55f, 0.55f, 0f) * Time.unscaledDeltaTime;
                 var fade = 2.6f * Time.unscaledDeltaTime;
                 var gone = false;
-                var tm = t.GetComponent<TextMesh>();
-                if (tm != null)
+                var visual = HitFxVisualOf(t);
+                for (var materialIndex = 0; materialIndex < visual.Materials.Count; materialIndex++)
                 {
-                    var c = tm.color;
+                    var material = visual.Materials[materialIndex];
+                    if (material == null) continue;
+                    var c = material.color;
                     c.a -= fade;
-                    tm.color = c;
-                    if (c.a <= 0.03f) gone = true;
-                }
-                foreach (var r in t.GetComponentsInChildren<Renderer>(true))
-                {
-                    if (r == null || r.material == null) continue;
-                    var c = r.material.color;
-                    c.a -= fade;
-                    r.material.color = c;
-                    if (r.material.HasProperty("_Color")) r.material.SetColor("_Color", c);
+                    material.color = c;
+                    if (material.HasProperty("_Color")) material.SetColor("_Color", c);
                     if (c.a <= 0.03f) gone = true;
                 }
                 if (gone)
                 {
-                    Destroy(t.gameObject);
+                    RecycleHitFx(t);
                     _fx.RemoveAt(i);
                 }
                 continue;
@@ -425,7 +542,7 @@ public sealed partial class PlayDirector : MonoBehaviour
             t.localScale += Vector3.one * (2.8f * Time.unscaledDeltaTime);
             if (t.localScale.x > 1.35f)
             {
-                Destroy(t.gameObject);
+                DestroyOwnedVisual(t);
                 _fx.RemoveAt(i);
             }
         }
@@ -439,7 +556,7 @@ public sealed partial class PlayDirector : MonoBehaviour
             Flight.Scene = scene;
             _looks = MdLooks.For(scene);
             RebuildJudges();
-            var cam = Camera.main;
+            var cam = _mainCamera;
             if (cam != null) cam.backgroundColor = new Color(0.05f, 0.05f, 0.08f);
         }
         EnsureBg(scene);
@@ -447,10 +564,18 @@ public sealed partial class PlayDirector : MonoBehaviour
 
     void EnsureBg(string scene)
     {
-        if (scene == _bgScene && _bg != null && !MdSceneBg.LayoutStale(scene)) return;
+        if (scene == _bgScene && _bg != null)
+        {
+            // layout.json 热更新只用于调试，不应让正常游玩每帧访问磁盘。
+            // 0.5 秒检查一次仍能及时看到编辑结果，也消除了主线程 I/O 抖动。
+            if (Time.unscaledTime < _nextBgLayoutCheckAt) return;
+            _nextBgLayoutCheckAt = Time.unscaledTime + 0.5f;
+            if (!MdSceneBg.LayoutStale(scene)) return;
+        }
         MdSceneBg.Drop(_bg);
         _bg = null;
         _bgScene = scene;
+        _nextBgLayoutCheckAt = Time.unscaledTime + 0.5f;
         var sh = Shader.Find("Sprites/Default") ?? _shader;
         _bg = MdSceneBg.Spawn(transform, scene, sh, worldScale);
         var has = _bg != null;
@@ -480,7 +605,8 @@ public sealed partial class PlayDirector : MonoBehaviour
                 && hit.Note.Category == NoteCategory.Gear
                 && hit.Grade == Judge.Grade.Pass;
             PlayGirlHit(hit);
-            if (hit.Note.Category == NoteCategory.Ghost) continue;
+            // 幽灵只是在抵达判定线前渐隐，不是无反馈物件。手动命中仍需
+            // 显示 Perfect/Great 与 Early/Late，否则成功输入看起来像漏键。
             if (hit.Grade != Judge.Grade.Miss)
             {
                 _flashGrade = hit.Grade;
@@ -499,11 +625,11 @@ public sealed partial class PlayDirector : MonoBehaviour
                 ? (hit.Note.Pathway == 1 ? Flight.RoadY : Flight.AirY)
                 : Flight.LaneY(hit.Note);
             var y = -laneY * worldScale;
-            SpawnFx(y, hit.Grade);
+            SpawnFx(y, hit.Grade, HitTimingText(hit));
         }
     }
 
-    void SpawnFx(float y, Judge.Grade grade)
+    void SpawnFx(float y, Judge.Grade grade, string timingText = "")
     {
         // 官机 ImgScorePerfect / Great / Pass；双押仍是同一张字。无 MISS 气泡。
         var key = grade == Judge.Grade.Perfect ? "hit_perfect"
@@ -512,11 +638,66 @@ public sealed partial class PlayDirector : MonoBehaviour
         if (key == null || !MdLooks.TrySprite(_scene, key, out var tex) || tex == null)
             return;
         var box = Mathf.Max(0.5f, tex.width / MdLooks.HitGradePpu * worldScale);
-        var t = SpriteQuad(transform, tex, box, "hitFx");
+        Transform t;
+        if (_fxPool.Count > 0)
+        {
+            var last = _fxPool.Count - 1;
+            t = _fxPool[last];
+            _fxPool.RemoveAt(last);
+            t.gameObject.SetActive(true);
+            var r = t.GetComponent<Renderer>();
+            if (r != null && r.sharedMaterial != null)
+            {
+                MdMat.SetTex(r.sharedMaterial, tex);
+                r.sharedMaterial.color = Color.white;
+                if (r.sharedMaterial.HasProperty("_Color"))
+                    r.sharedMaterial.SetColor("_Color", Color.white);
+            }
+            var aspect = tex.height > 0 ? (float)tex.width / tex.height : 1f;
+            t.localScale = FitBox(box, aspect);
+        }
+        else
+        {
+            t = SpriteQuad(transform, tex, box, "hitFx");
+            PaintLayer(t, 3220, -8);
+        }
         t.position = new Vector3(Flight.HitX * worldScale, y + 0.70f * worldScale, -0.18f);
         t.localScale *= 0.90f;
-        PaintLayer(t, 3220, -8);
+        SetHitTiming(t, timingText, grade);
+        HitFxVisualOf(t);
         _fx.Add(t);
+    }
+
+    HitFxVisual HitFxVisualOf(Transform t)
+    {
+        if (_hitFxVisuals.TryGetValue(t, out var cached)) return cached;
+        cached = new HitFxVisual();
+        _rendererScratch.Clear();
+        t.GetComponentsInChildren(true, _rendererScratch);
+        for (var i = 0; i < _rendererScratch.Count; i++)
+        {
+            var renderer = _rendererScratch[i];
+            if (renderer == null) continue;
+            // material 在首次缓存时实例化一次；之后淡出不再逐帧走层级查询，
+            // 也不会重复触发 Unity 的材质实例化路径。
+            var material = renderer.material;
+            if (material != null) cached.Materials.Add(material);
+        }
+        _hitFxVisuals[t] = cached;
+        return cached;
+    }
+
+    void RecycleHitFx(Transform t)
+    {
+        if (t == null) return;
+        t.gameObject.SetActive(false);
+        if (_fxPool.Count < 16)
+            _fxPool.Add(t);
+        else
+        {
+            _hitFxVisuals.Remove(t);
+            DestroyOwnedVisual(t);
+        }
     }
 
     static void PulseLane(Renderer lane, Material mat, bool on, Color flash)

@@ -52,7 +52,7 @@ public sealed partial class PlayDirector
         RebuildJudges();
     }
 
-    static void EnsureCamera()
+    void EnsureCamera()
     {
         var cam = Camera.main;
         if (cam == null)
@@ -83,6 +83,7 @@ public sealed partial class PlayDirector
         cam.orthographic = true;
         cam.orthographicSize = Flight.CameraSize;
         cam.depth = -1f;
+        _mainCamera = cam;
     }
 
     Material NewMat(Color color)
@@ -119,13 +120,23 @@ public sealed partial class PlayDirector
     void RebuildJudges()
     {
         if (_matAir == null) return;
-        if (_airJudge != null) Destroy(_airJudge.gameObject);
-        if (_roadJudge != null) Destroy(_roadJudge.gameObject);
+        DropJudge(_airJudge);
+        DropJudge(_roadJudge);
         var oneKey = SceneTimeline.RulesFor(_scene).OneKey;
         _airJudge = oneKey ? null : SpawnJudgeRing("JudgeAir", Flight.AirY, _matAir, true);
         _roadJudge = SpawnJudgeRing("JudgeRoad", Flight.RoadY, _matRoad, false);
         if (_laneAirT != null) _laneAirT.gameObject.SetActive(!oneKey && (_bg == null));
         if (_laneMidT != null) _laneMidT.gameObject.SetActive(!oneKey && (_bg == null));
+    }
+
+    static void DropJudge(Transform root)
+    {
+        if (root == null) return;
+        // 静图判定圈由 SpriteQuad 创建独占材质；方块兜底使用舞台共享材质。
+        if (FindNamed(root, "out") != null)
+            DestroyOwnedVisual(root);
+        else
+            Destroy(root.gameObject);
     }
 
     Transform SpawnJudgeRing(string name, float yDown, Material rim, bool air)

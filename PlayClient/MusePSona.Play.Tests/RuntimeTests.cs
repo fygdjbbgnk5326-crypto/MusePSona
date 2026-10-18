@@ -476,6 +476,11 @@ public class FlightTests
         Assert.Equal(1, s.Combo);
         Assert.DoesNotContain(s.Visible(1.01f), n => n.Id == 1);
         Assert.Contains(s.Visible(0.9f), n => n.Id == 1);
+        var visible = new List<PlayNote> { new() { Id = 99 } };
+        s.CollectVisible(0.9f, visible);
+        Assert.Single(visible);
+        Assert.Equal(1, visible[0].Id);
+        Assert.Same(visible[0], s.NoteById(1));
     }
 }
 
@@ -1153,6 +1158,49 @@ public class JudgeTests
     }
 
     [Fact]
+    public void OfficialAttackWindow_IsPerfect50AndGreat80Milliseconds()
+    {
+        var n = new PlayNote { TimeSec = 1m, BmsId = "01", NeedsHit = true };
+        Assert.Equal(Judge.Grade.Perfect, Judge.Tap(n, 0.95f));
+        Assert.Equal(Judge.Grade.Great, Judge.Tap(n, 0.921f));
+        Assert.Equal(Judge.Grade.Perfect, Judge.Tap(n, 1.05f));
+        Assert.Equal(Judge.Grade.Great, Judge.Tap(n, 1.079f));
+        Assert.Equal(Judge.Grade.Miss, Judge.Tap(n, 1.081f));
+        Assert.False(Judge.CanTap(n, 0.919f));
+        Assert.True(Judge.CanTap(n, 1.08f));
+        Assert.False(Judge.IsLateMiss(n, 1.08f));
+        Assert.True(Judge.IsLateMiss(n, 1.081f));
+    }
+
+    [Fact]
+    public void PassiveCollectible_UsesOfficial160MillisecondLateWindow()
+    {
+        static PlaySession Session()
+        {
+            var doc = new MuseDashChart.ChartDocument();
+            doc.Charts[1] = new MuseDashChart.DifficultyChart
+            {
+                Notes =
+                {
+                    new MuseDashChart.Placement
+                    {
+                        Id = 1, TimeSec = 1m, BmsId = "23", Pathway = 0, Kind = "note"
+                    }
+                }
+            };
+            return new PlaySession(new PlaySong(doc, ".", null), 1);
+        }
+
+        var caught = Session();
+        caught.TickManual(1.15f, playerAir: false, activeHoldMask: 0);
+        Assert.Equal(Judge.Grade.Perfect, caught.GradeOf(1));
+
+        var expired = Session();
+        expired.TickManual(1.161f, playerAir: false, activeHoldMask: 0);
+        Assert.Equal(Judge.Grade.Miss, expired.GradeOf(1));
+    }
+
+    [Fact]
     public void ManualGear_UsesPlayerLane_WithoutAddingMiss()
     {
         static PlaySession Session()
@@ -1244,6 +1292,11 @@ public class JudgeTests
         // 地面 Hold 已占据地轨时，即使主角色姿态采样为上轨也会接到条内音符。
         s.TickManual(2.01f, playerAir: true, activeHoldMask: 1);
         Assert.Equal(Judge.Grade.Perfect, s.GradeOf(2));
+
+        var hits = new List<PlaySession.JudgeHit>();
+        s.TakeHits(hits);
+        Assert.Equal(2, hits.Count);
+        Assert.All(hits, hit => Assert.False(hit.HasTiming));
     }
 
     [Fact]
@@ -1306,6 +1359,16 @@ public class JudgeTests
         Assert.Equal(Judge.Grade.Perfect, swapped.GradeOf(1));
         Assert.Equal(2, swapped.Combo);
         Assert.Equal(0, swapped.Misses);
+
+        // 官机尾点允许略微提前松键。尾点前 60ms 松开仍应完成 Hold，
+        // 避免玩家按听感收手时因一帧输入差异被判断条。
+        var tailGrace = Session();
+        Assert.Equal(Judge.Grade.Perfect, tailGrace.HitLane(false, 1f));
+        tailGrace.TickManual(1.94f, playerAir: false, activeHoldMask: 1, heldLaneMask: 0);
+        tailGrace.TickManual(2f, playerAir: false, activeHoldMask: 0, heldLaneMask: 0);
+        Assert.Equal(Judge.Grade.Perfect, tailGrace.GradeOf(1));
+        Assert.Equal(2, tailGrace.Combo);
+        Assert.Equal(0, tailGrace.Misses);
     }
 
     [Fact]
@@ -1370,6 +1433,36 @@ public class JudgeTests
         Assert.Equal(Judge.Grade.Perfect, s.HitLane(false, 1.065f));
         Assert.Equal(Judge.Grade.Perfect, s.HitLane(false, 1.12f));
         Assert.Equal(3, s.Combo);
+    }
+
+    [Fact]
+    public void ManualGhost_UsesItsLaneAndReportsSuccessfulTiming()
+    {
+        var doc = new MuseDashChart.ChartDocument();
+        doc.Charts[1] = new MuseDashChart.DifficultyChart
+        {
+            Notes =
+            {
+                new MuseDashChart.Placement
+                {
+                    Id = 1, TimeSec = 1m, BmsId = "21",
+                    Pathway = 1, Kind = "note"
+                }
+            }
+        };
+        var s = new PlaySession(new PlaySong(doc, ".", null), 1);
+
+        // 幽灵渐隐不改变轨道，也不应变成自动收集物。
+        Assert.Equal(Judge.Grade.None, s.HitLane(false, 1.06f));
+        Assert.Equal(Judge.Grade.Great, s.HitLane(true, 1.06f));
+        Assert.Equal(Judge.Grade.Great, s.GradeOf(1));
+        Assert.Equal(1, s.Combo);
+
+        var hits = new List<PlaySession.JudgeHit>();
+        s.TakeHits(hits);
+        Assert.Single(hits);
+        Assert.True(hits[0].HasTiming);
+        Assert.InRange(hits[0].OffsetSec, 0.059f, 0.061f);
     }
 }
 
@@ -1485,6 +1578,124 @@ public class SessionTests
         s.Autoplay(1.5f);
         Assert.Contains(s.Visible(1.5f), n => n.Id == 1);
         Assert.DoesNotContain(s.Visible(1.4f + Flight.OutKeepSec + 0.05f), n => n.Id == 1);
+    }
+
+    [Fact]
+    public void Score_NormalizesWholeChartToOneHundredThousand()
+    {
+        var s = Make();
+        Assert.Equal(2, s.TotalScoreUnits);
+
+        Assert.Equal(Judge.Grade.Perfect, s.HitLane(false, 0.98f));
+        Assert.Equal(Judge.Grade.Great, s.HitLane(true, 2.06f));
+
+        Assert.Equal(75_000, s.Score);
+        Assert.Equal(75f, s.Accuracy, 3);
+        Assert.Equal(2, s.MaxCombo);
+        var hits = new List<PlaySession.JudgeHit>();
+        s.TakeHits(hits);
+        Assert.True(hits[0].HasTiming);
+        Assert.True(hits[0].OffsetSec < 0f);
+        Assert.True(hits[1].OffsetSec > 0f);
+    }
+
+    [Fact]
+    public void HitTiming_SubtractsChartDelayBeforeReportingMilliseconds()
+    {
+        var doc = new MuseDashChart.ChartDocument();
+        doc.Meta.DelaySec = "0.5";
+        doc.Charts[1] = new MuseDashChart.DifficultyChart
+        {
+            Notes =
+            {
+                new MuseDashChart.Placement
+                {
+                    Id = 1, TimeSec = 1m, BmsId = "01", Pathway = 0, Kind = "note"
+                }
+            }
+        };
+        var s = new PlaySession(new PlaySong(doc, ".", null), 1);
+
+        Assert.Equal(Judge.Grade.Perfect, s.HitLane(false, 1.5f));
+        var hits = new List<PlaySession.JudgeHit>();
+        s.TakeHits(hits);
+        Assert.Single(hits);
+        Assert.Equal(0f, hits[0].OffsetSec, 4);
+    }
+
+    [Fact]
+    public void Score_ExcludesGearButIncludesCollectibles()
+    {
+        var doc = new MuseDashChart.ChartDocument();
+        doc.Charts[1] = new MuseDashChart.DifficultyChart
+        {
+            Notes =
+            {
+                new MuseDashChart.Placement { Id = 1, TimeSec = 1m, BmsId = "0H", Pathway = 0, Kind = "note" },
+                new MuseDashChart.Placement { Id = 2, TimeSec = 2m, BmsId = "23", Pathway = 0, Kind = "note" }
+            }
+        };
+        var s = new PlaySession(new PlaySong(doc, ".", null), 1);
+        Assert.Equal(1, s.TotalScoreUnits);
+        s.Autoplay(2.01f);
+        Assert.Equal(PlaySession.FullScore, s.Score);
+        Assert.Equal(100f, s.Accuracy, 3);
+    }
+
+    [Fact]
+    public void Score_HoldHeadAndTailAreSeparateUnits()
+    {
+        var doc = new MuseDashChart.ChartDocument();
+        doc.Charts[1] = new MuseDashChart.DifficultyChart
+        {
+            Notes =
+            {
+                new MuseDashChart.Placement
+                {
+                    Id = 1, TimeSec = 1m, LengthSec = 0.5m,
+                    BmsId = "0F", Pathway = 0, Kind = "note"
+                }
+            }
+        };
+        var s = new PlaySession(new PlaySong(doc, ".", null), 1);
+        Assert.Equal(2, s.TotalScoreUnits);
+        s.Autoplay(1.5f);
+        Assert.Equal(2, s.JudgedScoreUnits);
+        Assert.Equal(PlaySession.FullScore, s.Score);
+    }
+
+    [Fact]
+    public void Score_MasherUsesFixedTickTargetAndCapsExtraHits()
+    {
+        var doc = new MuseDashChart.ChartDocument();
+        doc.Charts[1] = new MuseDashChart.DifficultyChart
+        {
+            Notes =
+            {
+                new MuseDashChart.Placement
+                {
+                    Id = 1, TimeSec = 1m, LengthSec = 0.4m,
+                    BmsId = "0G", Pathway = 0, Kind = "note"
+                }
+            }
+        };
+        var s = new PlaySession(new PlaySong(doc, ".", null), 1);
+        Assert.Equal(6, s.TotalScoreUnits);
+        s.Autoplay(1.5f);
+        Assert.Equal(6, s.JudgedScoreUnits);
+        Assert.Equal(PlaySession.FullScore, s.Score);
+        Assert.True(s.IsFinished(1.5f + Judge.MissAfter));
+    }
+
+    [Fact]
+    public void ResultFallback_FinalizesUnresolvedChartAsMisses()
+    {
+        var s = Make();
+        Assert.True(s.FinalizeIfDue(2f + Judge.MissAfter));
+        Assert.Equal(0, s.Score);
+        Assert.Equal(0f, s.Accuracy, 3);
+        Assert.Equal(s.TotalScoreUnits, s.JudgedScoreUnits);
+        Assert.Equal(2, s.Misses);
     }
 
     [Fact]
@@ -1684,4 +1895,46 @@ public class ChangeTheGameMap4Tests
         var boss = BossTimeline.Build(chart.Notes, playable);
         Assert.StartsWith("far_atk_1", boss.At(51.97f).Clip);
     }
+}
+
+public class AudioOffsetTests
+{
+    [Theory]
+    [InlineData(-1200, -1000)]
+    [InlineData(-1000, -1000)]
+    [InlineData(0, 0)]
+    [InlineData(1000, 1000)]
+    [InlineData(1200, 1000)]
+    public void Clamp_UsesOfficialRange(int value, int expected)
+        => Assert.Equal(expected, AudioOffset.Clamp(value));
+
+    [Fact]
+    public void PositiveOffset_DelaysChartAgainstAudio()
+    {
+        Assert.Equal(9.9f, AudioOffset.Apply(10f, 100), 3);
+        Assert.Equal("+0.035 s", AudioOffset.Format(35));
+        Assert.Equal("-0.016 s", AudioOffset.Format(-16));
+        Assert.Equal("0.000 s", AudioOffset.Format(0));
+    }
+
+    [Fact]
+    public void OfficialAdjustmentGears_ArePreserved()
+    {
+        Assert.Equal(1, AudioOffset.StepMs);
+        Assert.Equal(10, AudioOffset.FastStepMs);
+        Assert.Equal(0.75f, AudioOffset.LongPressDelaySec);
+        Assert.Equal(0.2f, AudioOffset.LongPressRepeatSec);
+    }
+
+    [Theory]
+    [InlineData(-1200, -1000)]
+    [InlineData(-951, -951)]
+    [InlineData(-149, -149)]
+    [InlineData(-50, -50)]
+    [InlineData(49, 49)]
+    [InlineData(50, 50)]
+    [InlineData(951, 951)]
+    [InlineData(1200, 1000)]
+    public void Snap_PreservesMillisecondLevelsWithinRange(int value, int expected)
+        => Assert.Equal(expected, AudioOffset.Snap(value));
 }

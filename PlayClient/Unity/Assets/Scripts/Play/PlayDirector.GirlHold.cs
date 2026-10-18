@@ -24,10 +24,50 @@ public sealed partial class PlayDirector
             : GirlCenterPoseActive(now) ? GirlDoubleHoldY : GirlGroundY + GirlTrackLift();
         _girlHoldMask = ActiveGirlHoldMask(now, out _girlHoldUntil);
         if (_girlHoldMask == 0)
+        {
             _girlPrimaryHoldLane = -1;
-        else if (_girlPrimaryHoldLane < 0 || (_girlHoldMask & (1 << _girlPrimaryHoldLane)) == 0)
-            // 官机同帧双押会先保留地面主指、吞掉第二个空中 GetButtonDown。
-            _girlPrimaryHoldLane = (_girlHoldMask & 1) != 0 ? 0 : 1;
+            // 虚影只属于正在生效的 Hold。连打结束、Hold 收尾或漏掉
+            // Hold 后必须在本批结算前立即回收，不能等虚影动画自然播完。
+            HideGirlGhost();
+            if (oldMask != 0)
+            {
+                // 保存极短的退出上下文，供同批/下一次 Flush 的断 Hold 选择
+                // air_press_hurt。输入回调可能先于 Update 的 Hold 尾点结算，
+                // 因此不能只依赖当前已经清零的 mask。
+                _girlHoldExitMask = oldMask;
+                _girlHoldExitUntil = now + 0.10f;
+
+                if (oldMask == 2)
+                {
+                    // 单上轨 Hold 从当前最高点直接进入平滑下落；不重播起跳，
+                    // 也不在尾点额外续空。
+                    BeginGirlFallAfterHold(now);
+                }
+                else if (oldMask == 3)
+                {
+                    // 双押 Hold 位于中轨，结束后用官机下砍时长平滑回地面。
+                    // 不能套用上轨续空，否则角色会在尾点被吸到上轨。
+                    EndGirlAirborne();
+                    _girlHoldMoveFromY = oldTrackY;
+                    _girlHoldMoveToY = GirlGroundY;
+                    _girlHoldMoveAt = now;
+                    _girlHoldMoveUntil = now + GirlDownStrike;
+                }
+                else
+                {
+                    EndGirlAirborne();
+                    _girlHoldMoveAt = _girlHoldMoveUntil = -99f;
+                }
+            }
+        }
+        else
+        {
+            _girlHoldExitMask = 0;
+            _girlHoldExitUntil = -99f;
+            if (_girlPrimaryHoldLane < 0 || (_girlHoldMask & (1 << _girlPrimaryHoldLane)) == 0)
+                // 官机同帧双押会先保留地面主指、吞掉第二个空中 GetButtonDown。
+                _girlPrimaryHoldLane = (_girlHoldMask & 1) != 0 ? 0 : 1;
+        }
 
         // 双押仍只播放一份 press，但 PlaceGirl 会把根节点抬到 Boss 中轨。
         // 第二根 Hold 只改变 mask/位置，不生成额外角色虚影。
@@ -56,7 +96,11 @@ public sealed partial class PlayDirector
                 _girlActionUntil = _girlHoldUntil;
         }
 
-        _girlDodgePoseAir = GirlIsAir();
+        // 受伤/闪避判定也使用离散碰撞轨道，避免下砍的视觉过渡
+        // 让同批上轨齿轮仍按上轨姿态处理。
+        // oldMask 是本批判定发生前的实际轨道。Hold 尾点/断条会在上面先
+        // 清掉活动 mask，若此处再按新状态采样，上轨断 Hold 会错误播地面 hurt。
+        _girlDodgePoseAir = oldMask != 0 ? oldMask == 2 : GirlCollisionIsAir(now);
         _girlDodgeUsed = false;
     }
 
@@ -89,11 +133,18 @@ public sealed partial class PlayDirector
     {
         until = 0f;
         if (_session == null) return 0;
+        if (now + 0.001f < _girlHoldScanAt)
+            _girlHoldScanIndex = 0;
+        _girlHoldScanAt = now;
+        while (_girlHoldScanIndex < _session.HoldNotes.Count
+            && (float)_session.HoldNotes[_girlHoldScanIndex].EndSec <= now)
+            _girlHoldScanIndex++;
         var mask = 0;
-        foreach (var n in _session.HoldNotes)
+        for (var i = _girlHoldScanIndex; i < _session.HoldNotes.Count; i++)
         {
-            if (n.Category != NoteCategory.Hold || now < (float)n.TimeSec || now >= (float)n.EndSec)
-                continue;
+            var n = _session.HoldNotes[i];
+            if (now < (float)n.TimeSec) break;
+            if (now >= (float)n.EndSec) continue;
             var grade = _session.GradeOf(n.Id);
             if (grade is not (Judge.Grade.Perfect or Judge.Grade.Great))
                 continue;
@@ -113,17 +164,27 @@ public sealed partial class PlayDirector
         return null;
     }
 
+    static bool GirlHoldGhostCandidate(PlayNote n)
+        => n != null && n.BmsId != "0E"
+            && n.Category is NoteCategory.Monster or NoteCategory.Boss
+                or NoteCategory.Ghost or NoteCategory.Music;
+
     void PlayGirlHoldGhost(PlaySession.JudgeHit hit, float now)
     {
         if (_girlGhost == null || _girlGhostRoot == null) return;
         var n = hit.Note;
+        // 只有有效 Hold 内的副轨单击物件能生成虚影。Masher 连打、双押、
+        // 齿轮、红心和 Hold 本体无论轨道如何都不能进入该表现分支。
+        if (_girlHoldMask == 0 || now >= _girlHoldUntil || !GirlHoldGhostCandidate(n))
+        {
+            HideGirlGhost();
+            return;
+        }
         // 官机的副键虚影是从当前 Hold 姿态分出的单次残影。每次打击都重新
         // 以主角色 Hold 轨道为起点，不能继承上一段虚影自己的空中位置。
         _girlGhostFromY = GirlHoldTrackY();
-        _girlGhostToY = n.Category == NoteCategory.Masher
-            ? GirlDoubleHoldY
-            : n.Pathway == 1 ? GirlGroundY + GirlAirLift : GirlGroundY;
-        _girlGhostCenterLocked = n.Category == NoteCategory.Masher;
+        _girlGhostToY = n.Pathway == 1 ? GirlGroundY + GirlAirLift : GirlGroundY;
+        _girlGhostCenterLocked = false;
         _girlGhostMoveDuration = _girlGhostToY > _girlGhostFromY + 0.001f
             ? GirlJumpRise
             : _girlGhostToY < _girlGhostFromY - 0.001f ? GirlDownStrike : 0f;
@@ -135,17 +196,25 @@ public sealed partial class PlayDirector
         var index = (seq - 1) % count + 1;
         var lane = n.Pathway == 1 ? "air" : "road";
         var grade = perfect ? "perfect" : "great";
-        var clip = n.Pathway != 1 && _girlGhostFromY > GirlGroundY + 0.001f
-            ? ExistingGirlGhostClip("down_hit",
-                lane + "_hit_" + grade + "_" + index,
-                lane + "_hit_" + grade + "_1", "run")
-            : ExistingGirlGhostClip(
-                lane + "_hit_" + grade + "_" + index,
-                lane + "_hit_" + grade + "_1",
-                n.Pathway == 1 ? "jump" : "run");
+        var attack = ExistingGirlGhostClip(
+            lane + "_hit_" + grade + "_" + index,
+            lane + "_hit_" + grade + "_1",
+            n.Pathway == 1 ? "jump" : "run");
+        var rising = _girlGhostToY > _girlGhostFromY + 0.001f;
+        var falling = _girlGhostToY < _girlGhostFromY - 0.001f;
+        var transition = rising ? ExistingGirlGhostClip("jump")
+            : falling ? ExistingGirlGhostClip("down_hit") : null;
+        var clip = !string.IsNullOrEmpty(transition) ? transition : attack;
         if (string.IsNullOrEmpty(clip)) return;
         _girlGhostAction = clip;
         _girlGhostAt = now;
+        _girlGhostDuration = _girlGhost.Skeleton?.Data?.FindAnimation(clip)?.Duration ?? 0f;
+        _girlGhostQueuedAction = !string.IsNullOrEmpty(transition) && transition != attack
+            ? attack : "";
+        _girlGhostQueuedActionAt = _girlGhostQueuedAction.Length > 0
+            ? now + (rising ? GirlJumpRise : GirlDownStrike)
+            : -99f;
+        _girlGhostMoveAt = now;
         _girlGhostRoot.position = new Vector3(
             GirlTrackX * worldScale, _girlGhostFromY * worldScale, -3.19f);
         _girlGhostRoot.gameObject.SetActive(true);
@@ -156,16 +225,36 @@ public sealed partial class PlayDirector
     void TickGirlGhost(float now)
     {
         if (_girlGhost == null || _girlGhostRoot == null || string.IsNullOrEmpty(_girlGhostAction)) return;
-        var anim = _girlGhost.Skeleton?.Data?.FindAnimation(_girlGhostAction);
-        var age = now - _girlGhostAt;
-        if (anim == null || age < 0f || age > anim.Duration)
+        if (_girlHoldMask == 0 || now >= _girlHoldUntil)
         {
             HideGirlGhost();
             return;
         }
-        var u = Mathf.Clamp01(age / Mathf.Max(0.01f, anim.Duration));
+        if (!string.IsNullOrEmpty(_girlGhostQueuedAction)
+            && now >= _girlGhostQueuedActionAt)
+        {
+            _girlGhostAction = _girlGhostQueuedAction;
+            _girlGhostAt = _girlGhostQueuedActionAt;
+            _girlGhostDuration = _girlGhost.Skeleton?.Data
+                ?.FindAnimation(_girlGhostAction)?.Duration ?? 0f;
+            _girlGhostQueuedAction = "";
+            _girlGhostQueuedActionAt = -99f;
+        }
+        var age = now - _girlGhostAt;
+        // 过渡片段即使比轨道移动窗口略短，也要保持最后一帧等待 queued
+        // hit，不能先把虚影回收；进入 hit 后再按它自己的时长结束。
+        var waitingFollowup = !string.IsNullOrEmpty(_girlGhostQueuedAction)
+            && now < _girlGhostQueuedActionAt;
+        if (_girlGhostDuration <= 0f || age < 0f
+            || (age > _girlGhostDuration && !waitingFollowup))
+        {
+            HideGirlGhost();
+            return;
+        }
+        var u = Mathf.Clamp01(age / Mathf.Max(0.01f, _girlGhostDuration));
+        var moveAge = now - _girlGhostMoveAt;
         var move = _girlGhostMoveDuration > 0f
-            ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / _girlGhostMoveDuration))
+            ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(moveAge / _girlGhostMoveDuration))
             : 1f;
         var ghostY = Mathf.Lerp(_girlGhostFromY, _girlGhostToY, move);
         _girlGhostRoot.position = new Vector3(
@@ -184,6 +273,10 @@ public sealed partial class PlayDirector
     void HideGirlGhost()
     {
         _girlGhostAction = "";
+        _girlGhostDuration = 0f;
+        _girlGhostQueuedAction = "";
+        _girlGhostQueuedActionAt = -99f;
+        _girlGhostMoveAt = -99f;
         _girlGhostCenterLocked = false;
         if (_girlGhost != null) _girlGhost.transform.localPosition = Vector3.zero;
         if (_girlGhostRoot != null) _girlGhostRoot.gameObject.SetActive(false);

@@ -7,11 +7,27 @@ using UnityEngine;
 /// <summary>Hold 头尾星、长条网格、裁切与透明度渲染。</summary>
 public sealed partial class PlayDirector
 {
+    internal sealed class HoldLayer
+    {
+        public Transform Transform;
+        public Mesh Mesh;
+        public readonly Vector3[] Vertices = new Vector3[4];
+        public readonly Vector2[] Uv = new Vector2[4];
+    }
+
+    static readonly int[] HoldTriangles = { 0, 2, 1, 0, 3, 2 };
+
     void PlaceHoldNotes(Actor a, PlayNote n, float headX, float y, float len, float chartNow)
     {
-        var lane = n.Pathway == 1 ? "air" : "ground";
-        MdLooks.TrySprite(_scene, lane + "_hold_note_up", out var up);
-        MdLooks.TrySprite(_scene, lane + "_hold_note_down", out var down);
+        if (!a.HoldNoteTexturesReady)
+        {
+            var lane = n.Pathway == 1 ? "air" : "ground";
+            MdLooks.TrySprite(_scene, lane + "_hold_note_up", out a.HoldNoteUpTexture);
+            MdLooks.TrySprite(_scene, lane + "_hold_note_down", out a.HoldNoteDownTexture);
+            a.HoldNoteTexturesReady = true;
+        }
+        var up = a.HoldNoteUpTexture;
+        var down = a.HoldNoteDownTexture;
         if (up == null && down == null)
         {
             if (a.Extra != null) a.Extra.gameObject.SetActive(false);
@@ -39,78 +55,90 @@ public sealed partial class PlayDirector
         var uFull = fullLen / tileW;
         var u0 = uFull - bar / tileW;
         var u1 = uFull;
-        PlaceHoldNoteLayer(a.Extra, "noteFixed", up != null ? up : down, bar, tileH, u0, u1, 2810);
+        PlaceHoldNoteLayer(a, false, a.Extra, "noteFixed", up != null ? up : down,
+            bar, tileH, u0, u1, 2810);
         if (down != null && down != up)
-            PlaceHoldNoteLayer(a.Extra, "noteDown", down, bar, tileH, u0, u1, 2811);
-        else
-            HideNamedChild(a.Extra, "noteDown");
-        HideHoldNoteJunk(a.Extra);
+            PlaceHoldNoteLayer(a, true, a.Extra, "noteDown", down,
+                bar, tileH, u0, u1, 2811);
+        if (!a.HoldNoteLayoutReady)
+        {
+            if (down == null || down == up)
+                HideNamedChild(a.Extra, "noteDown");
+            HideHoldNoteJunk(a.Extra);
+            a.HoldNoteLayoutReady = true;
+        }
     }
 
-    void PlaceHoldNoteLayer(Transform root, string name, Texture2D tex, float len, float tileH, float u0, float u1, int queue)
+    void PlaceHoldNoteLayer(Actor actor, bool lower, Transform root, string name,
+        Texture2D tex, float len, float tileH, float u0, float u1, int queue)
     {
-        tex.wrapMode = TextureWrapMode.Repeat;
-        Transform layer = null;
-        for (var i = 0; i < root.childCount; i++)
+        var cache = lower ? actor.HoldNoteDown : actor.HoldNoteUp;
+        if (cache == null || cache.Transform == null)
         {
-            if (root.GetChild(i).name == name) { layer = root.GetChild(i); break; }
-        }
-        if (layer == null)
-            layer = SpriteQuad(root, tex, 1f, name);
-        layer.gameObject.SetActive(true);
-        var r = layer.GetComponent<Renderer>();
-        if (r != null)
-        {
-            var sh = Shader.Find("MusePSona/MdHoldNote") ?? Shader.Find("MusePSona/MdSprite");
-            if (sh != null && (r.material == null || r.material.shader != sh))
-                r.material = new Material(sh);
-            if (r.material != null)
+            Transform layer = null;
+            for (var i = 0; i < root.childCount; i++)
             {
-                MdMat.SetTex(r.material, tex);
-                MdMat.SetScale(r.material, Vector2.one);
-                MdMat.SetOffset(r.material, Vector2.zero);
-                if (r.material.HasProperty("_AtlasRect"))
-                    r.material.SetVector("_AtlasRect", new Vector4(0f, 0f, 1f, 1f));
-                if (r.material.HasProperty("_Color")) r.material.SetColor("_Color", Color.white);
+                if (root.GetChild(i).name == name) { layer = root.GetChild(i); break; }
             }
+            if (layer == null)
+                layer = SpriteQuad(root, tex, 1f, name);
+            cache = new HoldLayer { Transform = layer };
+            var mf = layer.GetComponent<MeshFilter>();
+            if (mf != null)
+            {
+                cache.Mesh = new Mesh { name = "HoldNoteMesh" };
+                cache.Mesh.MarkDynamic();
+                cache.Mesh.vertices = cache.Vertices;
+                cache.Mesh.uv = cache.Uv;
+                cache.Mesh.triangles = HoldTriangles;
+                mf.sharedMesh = cache.Mesh;
+            }
+            tex.wrapMode = TextureWrapMode.Repeat;
+            var r = layer.GetComponent<Renderer>();
+            if (r != null)
+            {
+                var sh = Shader.Find("MusePSona/MdHoldNote") ?? Shader.Find("MusePSona/MdSprite");
+                var material = r.material;
+                if (material != null)
+                {
+                    if (sh != null && material.shader != sh) material.shader = sh;
+                    MdMat.SetTex(material, tex);
+                    MdMat.SetScale(material, Vector2.one);
+                    MdMat.SetOffset(material, Vector2.zero);
+                    if (material.HasProperty("_AtlasRect"))
+                        material.SetVector("_AtlasRect", new Vector4(0f, 0f, 1f, 1f));
+                    if (material.HasProperty("_Color")) material.SetColor("_Color", Color.white);
+                }
+            }
+            PaintLayer(layer, queue, -16);
+            if (lower) actor.HoldNoteDown = cache;
+            else actor.HoldNoteUp = cache;
         }
-        layer.localPosition = Vector3.zero;
-        layer.localRotation = Quaternion.identity;
-        layer.localScale = Vector3.one;
-        FillHoldNoteMesh(layer, len, tileH, u0, u1);
-        PaintLayer(layer, queue, -16);
+        var layerTransform = cache.Transform;
+        layerTransform.gameObject.SetActive(true);
+        layerTransform.localPosition = Vector3.zero;
+        layerTransform.localRotation = Quaternion.identity;
+        layerTransform.localScale = Vector3.one;
+        FillHoldNoteMesh(cache, len, tileH, u0, u1);
     }
 
-    static void FillHoldNoteMesh(Transform layer, float len, float h, float u0, float u1)
+    static void FillHoldNoteMesh(HoldLayer layer, float len, float h, float u0, float u1)
     {
-        var mf = layer.GetComponent<MeshFilter>();
-        if (mf == null) return;
-        Mesh mesh;
-        if (mf.sharedMesh != null && mf.sharedMesh.name == "HoldNoteMesh")
-            mesh = mf.mesh;
-        else
-        {
-            mesh = new Mesh { name = "HoldNoteMesh" };
-            mf.mesh = mesh;
-        }
+        var mesh = layer.Mesh;
+        if (mesh == null) return;
         var hw = len * 0.5f;
         var hh = h * 0.5f;
-        mesh.vertices = new[]
-        {
-            new Vector3(-hw, -hh, 0f),
-            new Vector3(hw, -hh, 0f),
-            new Vector3(hw, hh, 0f),
-            new Vector3(-hw, hh, 0f)
-        };
-        mesh.uv = new[]
-        {
-            new Vector2(u0, 0f),
-            new Vector2(u1, 0f),
-            new Vector2(u1, 1f),
-            new Vector2(u0, 1f)
-        };
-        mesh.triangles = new[] { 0, 2, 1, 0, 3, 2 };
-        mesh.RecalculateBounds();
+        layer.Vertices[0] = new Vector3(-hw, -hh, 0f);
+        layer.Vertices[1] = new Vector3(hw, -hh, 0f);
+        layer.Vertices[2] = new Vector3(hw, hh, 0f);
+        layer.Vertices[3] = new Vector3(-hw, hh, 0f);
+        layer.Uv[0] = new Vector2(u0, 0f);
+        layer.Uv[1] = new Vector2(u1, 0f);
+        layer.Uv[2] = new Vector2(u1, 1f);
+        layer.Uv[3] = new Vector2(u0, 1f);
+        mesh.vertices = layer.Vertices;
+        mesh.uv = layer.Uv;
+        mesh.bounds = new Bounds(Vector3.zero, new Vector3(len, h, 0.01f));
     }
 
     static void HideHoldNoteJunk(Transform root)
@@ -134,24 +162,31 @@ public sealed partial class PlayDirector
         }
     }
 
-    static void SetActorAlpha(Actor a, float alpha)
+    void SetActorAlpha(Actor a, float alpha)
     {
         alpha = Mathf.Clamp01(alpha);
+        if (Mathf.Abs(a.Alpha - alpha) < 0.001f) return;
+        a.Alpha = alpha;
         ApplyAlpha(a.Body, alpha);
         ApplyAlpha(a.Extra, alpha);
         ApplyAlpha(a.Head, alpha);
         ApplyAlpha(a.Tail, alpha);
     }
 
-    static void ApplyAlpha(Transform t, float alpha)
+    void ApplyAlpha(Transform t, float alpha)
     {
         if (t == null) return;
-        foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+        _rendererScratch.Clear();
+        t.GetComponentsInChildren(true, _rendererScratch);
+        for (var i = 0; i < _rendererScratch.Count; i++)
         {
-            if (r == null || r.material == null) continue;
-            var c = r.material.color;
+            var r = _rendererScratch[i];
+            if (r == null) continue;
+            var material = r.material;
+            if (material == null) continue;
+            var c = material.color;
             c.a = alpha;
-            r.material.color = c;
+            material.color = c;
         }
     }
 }

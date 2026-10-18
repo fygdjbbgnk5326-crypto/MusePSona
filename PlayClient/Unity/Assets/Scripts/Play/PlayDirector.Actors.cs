@@ -31,6 +31,16 @@ public sealed partial class PlayDirector
         public bool GearOnLine;
         public float FlyScale;
         public string LooksScene;
+        public string InClip;
+        public float InClipDuration;
+        public bool InClipReady;
+        internal HoldLayer HoldNoteUp;
+        internal HoldLayer HoldNoteDown;
+        public float Alpha = -1f;
+        public Texture2D HoldNoteUpTexture;
+        public Texture2D HoldNoteDownTexture;
+        public bool HoldNoteTexturesReady;
+        public bool HoldNoteLayoutReady;
     }
 
     Actor SpawnActor(PlayNote n)
@@ -292,7 +302,10 @@ public sealed partial class PlayDirector
         {
             foreach (var r in a.Root.GetComponentsInChildren<Renderer>())
             {
-                if (r != null) Destroy(r.material);
+                if (r == null || r.sharedMaterial == null) continue;
+                var material = r.sharedMaterial;
+                r.sharedMaterial = null;
+                Destroy(material);
             }
         }
         else if (a.Extra != null)
@@ -300,8 +313,41 @@ public sealed partial class PlayDirector
             var lr = a.Extra.GetComponent<LineRenderer>();
             if (lr != null) Destroy(lr.material);
         }
+        DestroyHoldLayerResources(a.HoldNoteUp);
+        DestroyHoldLayerResources(a.HoldNoteDown);
         if (a.Root != null) Destroy(a.Root.gameObject);
         if (a.Tint != null && !a.LooksSprite) Destroy(a.Tint);
+    }
+
+    static void DestroyHoldLayerResources(HoldLayer layer)
+    {
+        if (layer == null) return;
+        if (layer.Transform != null)
+        {
+            var r = layer.Transform.GetComponent<Renderer>();
+            if (r != null && r.sharedMaterial != null)
+            {
+                var material = r.sharedMaterial;
+                r.sharedMaterial = null;
+                Destroy(material);
+            }
+        }
+        if (layer.Mesh != null) Destroy(layer.Mesh);
+    }
+
+    /// <summary>销毁 SpriteQuad 及它独占的运行时材质。</summary>
+    static void DestroyOwnedVisual(Transform t)
+    {
+        if (t == null) return;
+        var materials = new HashSet<Material>();
+        foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+        {
+            if (r == null || r.sharedMaterial == null) continue;
+            var material = r.sharedMaterial;
+            r.sharedMaterial = null;
+            if (materials.Add(material)) Destroy(material);
+        }
+        Destroy(t.gameObject);
     }
 
     static string ActorName(PlayNote n)
