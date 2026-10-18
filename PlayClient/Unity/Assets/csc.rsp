@@ -1,0 +1,2 @@
+-r:Assets/Plugins/PlayRuntime/MuseDashChart.Core.dll
+-r:Assets/Plugins/PlayRuntime/MusePSona.Play.Runtime.dll

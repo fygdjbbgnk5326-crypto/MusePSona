@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>MDM 谱面预览</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="bg"></div>
+
+<header id="top">
+  <button id="open" title="打开 .mdm（也可直接拖进窗口）">打开 MDM</button>
+  <input id="file" type="file" accept=".mdm,.zip" hidden>
+  <div id="title">未加载谱面</div>
+  <div id="diffs"></div>
+</header>
+
+<main id="stage">
+  <canvas id="cv"></canvas>
+  <div id="hud"></div>
+  <div id="drop">
+    <div class="drop-box">
+      <div class="drop-main">把 .mdm 拖到这里</div>
+      <div class="drop-sub">或点击左上角「打开 MDM」 · 自制谱导出目录：MusePSona\导出</div>
+    </div>
+  </div>
+  <div id="toast"></div>
+</main>
+
+<footer id="bar">
+  <button id="play" title="播放 / 暂停（空格）">▶</button>
+  <button id="back" title="回到开头（Home）">⏮</button>
+  <div id="seek"><div id="fill"></div><div id="marks"></div></div>
+  <div id="time">0.0 / 0.0</div>
+  <label title="播放倍速（会变调）">倍速
+    <select id="rate">
+      <option value="0.5">0.5×</option>
+      <option value="0.75">0.75×</option>
+      <option value="1" selected>1×</option>
+      <option value="1.25">1.25×</option>
+    </select>
+  </label>
+  <label title="卷轴倍率（[ / ]）：物件飞行时长 ÷ 倍率，对矢量 / 贴图 / 游戏动画三种模式都生效&#10;1.0 = 游戏实测时长（判定帧 / 30 s：普通键 44/38/33、突击者 39/30/24、摆锤 26/21/18、上升下落怪 30/26/23 帧，档 1/2/3）&#10;大于 1 更快、更密；小于 1 更慢">卷轴
+    <button id="slow">−</button><span id="speedv">1.0</span><button id="fast">+</button>
+  </label>
+  <label title="谱面偏移，正数 = 物件更晚到达">偏移
+    <input id="offset" type="number" step="5" value="0">ms
+  </label>
+  <label title="打击音（H）"><input id="sfx" type="checkbox" checked>打击音</label>
+  <label title="在物件上显示 ibms 码与飞近档（I）&#10;图例：虚线圈 = 幽灵 · 白边带吊线 = 摆锤（线朝下 = 倒置）· 白边箭头带拖尾 = 突击者（拖尾朝下 = 倒置）&#10;红色同心圆 = 连打 · 左上角黄 / 红箭头 = 飞近档 2 / 3"><input id="ids" type="checkbox">显示 ID</label>
+  <label id="mdwrap" hidden title="用本机游戏里导出的物件贴图（G）&#10;素材由 scripts/extract_md_sprites.py 从已安装的 Muse Dash 读取，仅限本机使用"><input id="md" type="checkbox" checked>游戏素材</label>
+  <label id="animwrap" hidden title="游戏动画（A）：用游戏里逐帧录下的物件动画，按游戏原生入场时间线播放，预览里全部按 Perfect 切出场动画&#10;按谱面 scene 与通道 15 切场景（1O–1W）换包，缺包不借用其它场景、改走贴图/矢量&#10;动画包由 scripts/pack_md_anims.py 生成（素材来自 MDSceneGrabber），仅限本机使用；长按、音符、红心等没有动画的物件仍用贴图 / 矢量"><input id="anim" type="checkbox" checked>游戏动画</label>
+  <details id="warn"><summary>警告 0</summary><ul id="warnlist"></ul></details>
+</footer>
+
+<script src="js/zip.js"></script>
+<script src="js/bms.js"></script>
+<script src="js/mdm.js"></script>
+<script src="js/combo.js"></script>
+<script src="js/clock.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

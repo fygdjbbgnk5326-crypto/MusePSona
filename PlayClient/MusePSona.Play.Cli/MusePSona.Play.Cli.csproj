@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MusePSona.Play.Cli</RootNamespace>
+    <AssemblyName>mdplay</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MusePSona.Play.Runtime\MusePSona.Play.Runtime.csproj" />
+  </ItemGroup>
+</Project>

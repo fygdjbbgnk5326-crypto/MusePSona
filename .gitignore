@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# .NET / IDE
+**/bin/
+**/obj/
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.pdb
+*.log
+
+# Local secrets and machine settings
+.env
+.env.*
+!.env.example
+secrets.json
+
+# Decoder and player output
+/decoded_maps/
+/scripts/decoded_maps/
+/scripts/play_megalovania/
+/OsuGenerator/out/
+
+# Editor-only launchers stay with the separate editor repository
+/scripts/launch_editor.py
+/自制谱.bat
+/自制谱/说明.txt
+
+# Generated chart packages and local chart workspaces
+/导出/**
+!/导出/.gitignore
+/自制谱/*
+!/自制谱/_template/
+!/自制谱/_template/**
+
+# Local extracted/diagnostic images
+/_crop_*.png
+/_preview_*.png
+/play/_pendulum_preview/
+/PlayClient/_diag/
+/scripts/tools/_*.png
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
