@@ -248,22 +248,6 @@ def cmd_open(args):
     print("做完后在编辑器点「导出 MDM」，或回 bat 选 导出 / 打包并导入 Unity。")
 
 
-def cmd_preview(args):
-    player = os.path.join(_paths.repo_root(), "play", "mdm_player", "index.html")
-    if not os.path.isfile(player):
-        _die("找不到 play\\mdm_player\\index.html")
-    os.startfile(player)  # type: ignore[attr-defined]
-    out = _paths.export_dir()
-    if args.id:
-        packed = os.path.join(out, slug(args.id), slug(args.id) + ".mdm")
-        if os.path.isfile(packed):
-            os.startfile(os.path.dirname(packed))  # type: ignore[attr-defined]
-            print(packed)
-            return
-    os.startfile(out)  # type: ignore[attr-defined]
-    print("把 导出\\<id>\\<id>.mdm 拖进网页")
-
-
 def main():
     p = argparse.ArgumentParser(description="MusePSona 自制谱工程")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -311,10 +295,6 @@ def main():
     a.set_defaults(func=cmd_audio)
 
     sub.add_parser("unity", help="用 Hub 打开 PlayClient Unity 工程").set_defaults(func=cmd_unity)
-
-    v = sub.add_parser("preview", help="打开 MDM 预览页和导出目录")
-    v.add_argument("id", nargs="?", default="")
-    v.set_defaults(func=cmd_preview)
 
     args = p.parse_args()
     args.func(args)

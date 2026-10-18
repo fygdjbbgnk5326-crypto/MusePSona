@@ -128,13 +128,13 @@ umpopoff 转录与官机谱面已核对 **完全一致**。307 combo 接长按�
 | 摆锤 | 0D / 0J | 26 / 21 / 18 | 0.867 / 0.70 / 0.60 |
 | 上升 / 下落怪 | 02/05/08、03/06/09 | 30 / 26 / 23 | 档 3 实测 0.767；动画名 `in_up_*` / `in_down_*` 同这组帧。**不是**突击者 `in_up_39/30/24`，也不是连打下落 `in_down_27/23/20` |
 | Boss 远程1 弹 | 13 | 21 / 18 / 15 | 档 3 实测 0.5。横向 **px/s 与普通键同档相同**（见 §1.3），不是把 13.85u 压进 0.5 s |
-| Boss 齿轮 | 18 | 21 / 18 / 15 | 与弹 13 同（`boss_1_nor_*`）。Unity `HitFrames` 已对齐；网页 `flightOf` 仍按普通 44/38/33（生成偏早），`place()` 直线已用车道速度 |
+| Boss 齿轮 | 18 | 21 / 18 / 15 | 与弹 13 同（`boss_1_nor_*`）。Unity `HitFrames` 已对齐，直线飞近使用车道速度 |
 | Boss 远程2 弹 | 14 / 15 | 多数场景 **23 / 20 / 17**（`in_boss_2_*`）；城堡 scene_05 才是 31/28/24。Unity 按当前切景选表，不要一律套城堡帧 |
 | 连打（下落款） | 0G | 27 / 23 / 20 | 档 3 = 20。Unity `HitFrames` / `in_down_*` 已按此表；不要用天气娃娃 30/26/23 | |
 
 普通键的飞近速度比 = 44 : 38 : 33 取倒数 = **1 : 1.158 : 1.333**（约 400+ 段实测），**不是** 1 : 1.5 : 2。同档 **横向 px/s 与行程 13.85u 只属于普通直线族**（01/0H/21/0E/23/22 等）。短判定帧的直线（13/18，以及 14/15）**同速、更近生成**：档 3 约 1820 px/s，与 `in_nor_33` 一样，所以空中齿轮/骷髅与下轨普通键会对齐；不要用 `x = hitX + 剩余/本键时长 × 13.85`（那会让 15 帧齿轮划过快）。突击者仍是全程 13.85u / 本键时长（档 3 约 2490 px/s），不要改成车道速度。
 
-HUD / `categoryOf`（网页与 Unity）：`0H`/`18` = 齿轮；`0I`/`0J` = boss（外观仍走突击者/摆锤倒置）。转录 `notes_to_taps_holds`：同轨长按/连打只丢掉中间的 `0F`/`0G` 刻点，**条内其它可玩键全留**（`0H`、`23`、`0D`、`0C`、`0E` 等）。点长 `0F`（length=0）**不要**写进 13/14：官机不画，自制谱会当成小怪和同刻摆锤叠键（chrome_vox map4 有 13 处，其中 3 处与 `0D` 同拍）。**1 槽点长 0F**（length≈240/BPM/192；Cyaegha map3/4 的 42.9 条上星和 108s 远攻）转自制 `24`（`02_top` 星），**不要**写成 `23`（type7 是 `0003_score` 音符）。`24` 必须用同轨另一按键独立打击，不能因正在按住长条而自动结算；击中计连击/加分与长按头相同。`23` 才是接触轨道自动收集且不计连击。`16/17` 点长仍可走 13/14。
+Unity HUD / `CategoryOf`：`0H`/`18` = 齿轮；`0I`/`0J` = boss（外观仍走突击者/摆锤倒置）。转录 `notes_to_taps_holds`：同轨长按/连打只丢掉中间的 `0F`/`0G` 刻点，**条内其它可玩键全留**（`0H`、`23`、`0D`、`0C`、`0E` 等）。点长 `0F`（length=0）**不要**写进 13/14：官机不画，自制谱会当成小怪和同刻摆锤叠键（chrome_vox map4 有 13 处，其中 3 处与 `0D` 同拍）。**1 槽点长 0F**（length≈240/BPM/192；Cyaegha map3/4 的 42.9 条上星和 108s 远攻）转自制 `24`（`02_top` 星），**不要**写成 `23`（type7 是 `0003_score` 音符）。`24` 必须用同轨另一按键独立打击，不能因正在按住长条而自动结算；击中计连击/加分与长按头相同。`23` 才是接触轨道自动收集且不计连击。`16/17` 点长仍可走 13/14。
 
 ### 1.3 出场几何（实测）
 
@@ -152,9 +152,9 @@ HUD / `categoryOf`（网页与 Unity）：`0H`/`18` = 齿轮；`0I`/`0J` = boss�
 
 同一拍不同速是官谱合法配置，见 `自制包飞近规则.md`「同一拍不同速」。
 
-网页播放器 `play/mdm_player` 与 Unity `Flight` 已按 §1.2 时长、§1.3 几何画矢量时间线（`render.js` `flightOf` / `place()`；`Flight.HitFrames` / `LaneSpeed` / `TryPose`）。直线横向用车道速度；升降怪 y 全程 ease-out。网页 `flightOf` 对 `18`/`14`/`15` 仍给普通 44/38/33（生成偏早），Unity 已按表内帧数。动画名：`AnimBinding` 里 02/05/08 → `in_up_30/26/23`，03/06/09 → `in_down_30/26/23`，突击者 0C/0I 才是 `in_up_39/30/24`。实现取舍（摆锤终点对齐判定圈、矢量模式镜像轴取两轨中线）见 `musepsona项目解析树.md`「MDM 谱面预览」。通道 15 的 `1O–1W` 按当前时刻整屏换动画包，缺包走贴图/矢量。
+Unity `Flight` 已按 §1.2 时长、§1.3 几何绘制时间线（`Flight.HitFrames` / `LaneSpeed` / `TryPose`）。直线横向使用车道速度，升降怪 y 全程 ease-out。动画名：`AnimBinding` 中 02/05/08 → `in_up_30/26/23`，03/06/09 → `in_down_30/26/23`，突击者 0C/0I → `in_up_39/30/24`。通道 15 的 `1O–1W` 按当前时刻切换场景资源。
 
-动画从贴近官机到将就预览：**F8 的 Spine 3.8.99 `.skel`（Unity `MdSpine` 已直读；网页 spine-ts 未接）> F9 逐帧精灵表（网页已接）> atlas 静图**。官方 `.spine` 工程还原不了。改图请买/用 **Spine Professional**，Launcher 装 **3.8.99** 导入与导出（不要 3.8.75 导出、不要 4.x）。F8 在 3.8.99 里看完整物件：新建项目 → 导入数据，层级树 **图片** 节点填含 `0504/` 的根目录（中文路径易 MISSING，可用 `E:\md-spine`），取消「限制扫描」。导出勾上 **Nonessential data**，Binary + PMA atlas，Unity `scale` **0.005**。拆图用 Grabber `tools/unpack_atlas.py`。摆锤 `wooden` 裁切：atlas y 从上往下 + POT 顶 pad（`extract_md_sprites.py` / `recrop_pendulum.py`）。角色战斗包在 `char_*_battle`，与 `gamescene_*` 分开。细节见解析树「Spine 编辑器」及「已知问题」。
+动画资源优先级：**F8 的 Spine 3.8.99 `.skel`（Unity `MdSpine` 直读）> atlas 静图**。官方 `.spine` 工程还原不了。改图请买/用 **Spine Professional**，Launcher 装 **3.8.99** 导入与导出（不要 3.8.75 导出、不要 4.x）。F8 在 3.8.99 里看完整物件：新建项目 → 导入数据，层级树 **图片** 节点填含 `0504/` 的根目录（中文路径易 MISSING，可用 `E:\md-spine`），取消「限制扫描」。导出勾上 **Nonessential data**，Binary + PMA atlas，Unity `scale` **0.005**。拆图用 Grabber `tools/unpack_atlas.py`。摆锤 `wooden` 裁切：atlas y 从上往下 + POT 顶 pad（`extract_md_sprites.py` / `recrop_pendulum.py`）。角色战斗包在 `char_*_battle`，与 `gamescene_*` 分开。细节见解析树「Spine 编辑器」及「已知问题」。
 
 ### 1.3b 长按 miss / 外观（官机 IL2CPP）
 
@@ -205,7 +205,7 @@ Unity 显示在 `PlayClient/Unity/Assets/Scripts/Play/`：`PlayDirector.Stage` �
 
 官机预制 `scene_XX`（`gamescene_XX_assets_all_*`）：层 `Near` / `Near_air` / `Mid` / `Far` / `Bg`。地板 Animator 常在 Near **子节点**（`scene_02` 的 `Floor` 播 `s02_floor`，根 x 0→−92.16 / **18.67s** = **48×1.92** 块，父级 Near 没有控制器）。**不要把 Floor 循环压成 23.04**（12 块地砖），否则街机 `Mid_I` 掉出循环、凛ちゃん店会重复。SpriteRenderer PPU100；根约 `(-6.67,-3.75)`，正交相机 size **3.75**。横向循环读 StreamedClip 关键帧位移（`coeff[3]`），不要把斜率当成循环宽。Animator 开局帧和 Transform 不一致时，以开局帧为准（`scene_01` 的 `Well` Transform 写 0，曲线停在 x=−3.84）。不要用选歌 `main_bg_*` Spine 当对局背景。判定线 `HitPoint*` 整棵不抽。`arrow` 这个名字不要一律跳过：scene_01 墙边人字纹是 `WellArrow*` 下的 `s01_arrow`。默认局只抽原版激活件：跳过 `_hexie` 和谐替图，以及 `Mid_1_Arknights` / `_Touhou` / `_Wacca` / `s03_ghost_cy2` / `SceneEggs` 等联动换装（父组默认 `m_IsActive=false`）。联动方案以后再加。场景火/幽灵是 Spine（`MeshRenderer` + `s03_ghost`/`s03_fire`，scale **0.005**），不是 Sprite。`scene_10` 默认根无子节点，背景在 `scene_10_miku` 的 `ScrollableGear`。舞台没有 Animator，圈长在 `Scrollable.m_ScrollLength`，速度是普通键车道速度（13.85 / 44 帧）乘 `m_SpeedFactor`，开局相位是 `m_Anchor * 圈长`。`Mid1` 73.2/0.40、`Mid2` 54.9/0.30，一圈都是 19.38s，屏幕和立牌对齐。荧光棒在 `Near` 的子节点上，要拆开。镜音连贴在圈长右缘外 0.9，裁切时要留下。`SpeakerBoxMiddle1` 在 Mid1 左缘外（x≈−13.07），按圈长 73.2 折回后在双子右侧（x≈60.13），裁窗口时不能丢掉。播放时 KAITO 和头上的音符不浮动；镜音双子（含身旁的星）用上下浮动，振幅 0.12、周期 1 秒。`0037` 初音、`0040`/`0041` 两颗音符改用官机 `kagamine`：1.333 秒抬 0.258（正弦振幅 0.129，开局在最低点）。小怪 `1010` 默认皮是身体；翅膀、眼睛、天线在 `Miku` 皮肤。连打 `1004` 的 `body`/`hand_*` 和 `hurt_1/2/3` 的 `1_body`/`2_body`/`3_body` 也在 `Miku`。默认局把 default 和 `Miku` 合成一套皮肤；`RinLen` 不用。setup 没写附件名的槽（连打那三套受击件）不要按槽名填。`1014` 出场会关掉第二套头/盔/头发，Apply 之后不要再按 setup 名从 `Miku` 填回去，否则那些件会在空骨上漂。连打轮换 `hurt_1/2/3`，不要播把主 body 挂回去的 `hurt_4`。`1_body`/`2_body`/`3_body` 名字不以 `body` 开头，扁条裁切不能把它们丢掉，否则只剩火、爱心、触须在场上漂。位置以写回的 layout 为准。呼吸灯每根用官机 `idx` 分频段（0–30），不要共用 band 0。射灯不闪透明度。转轴在灯头。光束中心必须落在灯头当前朝向的射线上（局部 +Y），偏开会只剩灯头、看不到光柱。前灯 `spotlight` 2 秒只摆 3°–4°，舞台暗灯 `spotlight_back` 4 秒扫 10°–20°。双子右侧补上的中号音箱水平翻转后大箱在左，并再向左靠 0.6；旁边短射灯朝 −21°，不播晃动。近景荧光棒待机上下 0.04 / 0.065；舞台棒整排低 0.08，颜色压成 (0.40, 0.43, 0.50)。`scene_11` 愚人包几乎无景。
 
-抽取：`python scripts/extract_md_scene_bg.py --all`（`extract_md_sprites.py` 也会顺带抽），写出本机 `sprites/scene_XX/bg/*.png` + `layout.json`（gitignore，不进 MDM），再 `sync_md_assets_to_unity.py` → `StreamingAssets/MdLooks/sprites/scene_XX/bg/`。只补粒子、不重抽背景：`python scripts/extract_md_scene_bg.py --particles --scene 08`（`--particles` 不跑全量 `copy_looks`）。官机 Sprite **pivot 多为左下 (0,0)**，抽取时改成四边形中心，否则整景会偏到画面左下。每层片数上限 180（scene_02 Near 原 4k+ 粒子会卡死）。`layout.json` 的 `items` 放顶层（带 `gi` 组号，不要用 `g`，会和颜色绿通道撞名），不要嵌进 `groups`，否则 Unity `JsonUtility` 经常解出空数组。弹窗根位移同样放顶层 `movePeriod` / `moveT` / `moveX` / `moveY` / `moveStep`（`JsonUtility` 解嵌套 `moves[].ts` 经常是空的）。Unity `MdSceneBg` 按 `1O–1W` 换包；层 Animator 横向循环；元件自己的 Animator 做浮动（`bobAmp`）和闪灯（`blinkPeriod`）。层名带 `light`/`lamp`/`sign` 且 clip **没有** typeID 212 颜色曲线、也没有位移关键帧时（`s03_bpm_light` / `s06_bpm_light` 空片），**不要**写 `blinkPeriod`：播放端 0.35～1 正弦会把洗光/窗灯打闪。竖向循环写 **`scrollY`**（负值往下）和 `scrollPeriod`，播放用 `Repeat` 包进这一段，不要当成 0.12 的正弦漂。层 **`belt=1`** 时，名字里有 Mid 且速度为 0 也不要发明一条横移皮带。播放端另有一条全局门槛：层名像传送带且速度 **<2.5** 会改成 5u/s。**不要改这个 2.5**。scene_07 过山车是名字 `mid`、循环 56.8/80s（速度 <2.5），只给这一层写 **`belt=1`**（条件：`name==mid` 且 `loop>1` 且 `period≥10` 且 `loop/period<2.5`）。父节点有旋转时，子物体本地坐标要先绕父旋转再加到世界坐标，否则远光会落在轨道上。循环窗右缘取 **`max(origin+loop, 本圈最左一块的 x+loop)`**。层原点常常在第一块贴图左边，只切到 `origin+loop` 会把本圈后半截和下一圈拷贝一起丢掉。骨骼 `order==0` 时播放端画在 **−35**；官机不是 −35 的必须把 order 写进 layout。无后缀、旁边有 atlas 的文本，正文以 `{`/`[` 开头就存 `.json`，不要存成 `.skel`（会优先走 SkeletonBinary 然后失败）。场景道具 `SkeletonDataAsset.scale` 用 **0.005**，不要按 misc 名写成 0.01。两份 layout 一起改：`play/mdm_player/assets/md/sprites/` 和 `StreamingAssets/MdLooks/sprites/`。不要整场重抽（会先删 png）。**`mid_H*` 不要套默认 bob 0.12**。地砖循环宽已是步长整数倍就保持，不要按单张贴图的忽大忽小间距把官机循环扩宽。没有横移的层，不要用全部物件的 x 跨度去补一条循环。场景火/幽灵走 Spine `PoseLoop`。`25` 藏 / `26` 显；`2N` 冻位移（保持当前偏移）/`2O` 解冻；`27`/`28`/`29` 整景上下滚（`ScreenScrollSpeed=1.6`）。有背景时关掉占位车道条。改 `BgTimeline` 后同样要 `sync_unity_plugins.ps1`。
+抽取：`python scripts/extract_md_scene_bg.py --all`（`extract_md_sprites.py` 也会顺带抽），写出本机 `sprites/scene_XX/bg/*.png` + `layout.json`（gitignore，不进 MDM）。只补粒子、不重抽背景：`python scripts/extract_md_scene_bg.py --particles --scene 08`（`--particles` 不跑全量 `copy_looks`）。官机 Sprite **pivot 多为左下 (0,0)**，抽取时改成四边形中心，否则整景会偏到画面左下。每层片数上限 180（scene_02 Near 原 4k+ 粒子会卡死）。`layout.json` 的 `items` 放顶层（带 `gi` 组号，不要用 `g`，会和颜色绿通道撞名），不要嵌进 `groups`，否则 Unity `JsonUtility` 经常解出空数组。弹窗根位移同样放顶层 `movePeriod` / `moveT` / `moveX` / `moveY` / `moveStep`（`JsonUtility` 解嵌套 `moves[].ts` 经常是空的）。Unity `MdSceneBg` 按 `1O–1W` 换包；层 Animator 横向循环；元件自己的 Animator 做浮动（`bobAmp`）和闪灯（`blinkPeriod`）。层名带 `light`/`lamp`/`sign` 且 clip **没有** typeID 212 颜色曲线、也没有位移关键帧时（`s03_bpm_light` / `s06_bpm_light` 空片），**不要**写 `blinkPeriod`：播放端 0.35～1 正弦会把洗光/窗灯打闪。竖向循环写 **`scrollY`**（负值往下）和 `scrollPeriod`，播放用 `Repeat` 包进这一段，不要当成 0.12 的正弦漂。层 **`belt=1`** 时，名字里有 Mid 且速度为 0 也不要发明一条横移皮带。播放端另有一条全局门槛：层名像传送带且速度 **<2.5** 会改成 5u/s。**不要改这个 2.5**。scene_07 过山车是名字 `mid`、循环 56.8/80s（速度 <2.5），只给这一层写 **`belt=1`**（条件：`name==mid` 且 `loop>1` 且 `period≥10` 且 `loop/period<2.5`）。父节点有旋转时，子物体本地坐标要先绕父旋转再加到世界坐标，否则远光会落在轨道上。循环窗右缘取 **`max(origin+loop, 本圈最左一块的 x+loop)`**。层原点常常在第一块贴图左边，只切到 `origin+loop` 会把本圈后半截和下一圈拷贝一起丢掉。骨骼 `order==0` 时播放端画在 **−35**；官机不是 −35 的必须把 order 写进 layout。无后缀、旁边有 atlas 的文本，正文以 `{`/`[` 开头就存 `.json`，不要存成 `.skel`（会优先走 SkeletonBinary 然后失败）。场景道具 `SkeletonDataAsset.scale` 用 **0.005**，不要按 misc 名写成 0.01。layout 只维护 `PlayClient/Unity/Assets/StreamingAssets/MdLooks/sprites/`。不要整场重抽（会先删 png）。**`mid_H*` 不要套默认 bob 0.12**。地砖循环宽已是步长整数倍就保持，不要按单张贴图的忽大忽小间距把官机循环扩宽。没有横移的层，不要用全部物件的 x 跨度去补一条循环。场景火/幽灵走 Spine `PoseLoop`。`25` 藏 / `26` 显；`2N` 冻位移（保持当前偏移）/`2O` 解冻；`27`/`28`/`29` 整景上下滚（`ScreenScrollSpeed=1.6`）。有背景时关掉占位车道条。改 `BgTimeline` 后同样要 `sync_unity_plugins.ps1`。
 
 #### scene_01 方块墙（对照 `gamescene_01`）
 
@@ -451,7 +451,7 @@ layout **0 组 0 件**。几乎无景，跳过抽取与播放皮带。不要发�
 | 飞近 | 普通键 44/38/33，`in_nor_*`，Y = `RoadY` |
 | 问答 `40`/`41` | type **50/51** 是通道 15 事件（scene_01 museyao），**不是** 1K 彩蛋 |
 
-案例：`peropero_aniki_ranbu` map2（官机无 `1O–1W`）。Unity：`JudgeRules` + `HitLane`；网页：`ANIM_SPEC` 40–42、`prefix===11` 强制 road。
+案例：`peropero_aniki_ranbu` map2（官机无 `1O–1W`）。Unity 使用 `JudgeRules` + `HitLane`，并将 `prefix===11` 强制归入 road。
 
 #### scene_12 中式园林（对照 `gamescene_12`）
 
@@ -952,7 +952,4 @@ map4 脚本（自制 BMS 时间戳一致）：`1L`(48.6) → `1A`(48.9) → `1M`
 自制 map4 与官 Boss 键/脚本对齐；长条 `0F` 若对不上，是 BMS 头尾计数，与近战无关。要挥砍需把 130.5s 的 `16` 改成 `11`（对标 map1/2），不要用中线 `0G` 冒充近战。
 
 仍空着：本张没有的 `12`、`0I 0J`、`20`、`1G/1H`、`1U–1Y`、`2Y 2Z`、滤镜、问答、切鱼、东方弹。
-
-
-
 

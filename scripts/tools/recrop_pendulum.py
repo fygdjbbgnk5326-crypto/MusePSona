@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""从各场景 0315 Spine atlas 重裁摆锤 wooden，写回 MdLooks/sprites 与 mdm_player。"""
+"""从各场景 0315 Spine atlas 重裁摆锤 wooden，写回 Unity MdLooks/sprites。"""
 from pathlib import Path
 from PIL import Image
 
@@ -7,8 +7,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 SPINE = ROOT / "PlayClient/Unity/Assets/StreamingAssets/MdLooks/spine"
 SPRITE_A = ROOT / "PlayClient/Unity/Assets/StreamingAssets/MdLooks/sprites"
-SPRITE_B = ROOT / "play/mdm_player/assets/md/sprites"
-PREVIEW = ROOT / "play/_pendulum_preview"
+PREVIEW = ROOT / "PlayClient/_diag/pendulum_preview"
 
 
 def parse_atlas(text):
@@ -251,10 +250,9 @@ def main():
             key = ("air" if lane == "air" else "ground") + "_pendulum.png"
             print(" ", key, "mode", mode, "score", int(sc), img.size, name, r)
             img.save(PREVIEW / f"{scene.name}_{key}")
-            for dest_root in (SPRITE_A, SPRITE_B):
-                dest = dest_root / scene.name
-                dest.mkdir(parents=True, exist_ok=True)
-                img.save(dest / key)
+            dest = SPRITE_A / scene.name
+            dest.mkdir(parents=True, exist_ok=True)
+            img.save(dest / key)
     print("preview", PREVIEW)
 
 

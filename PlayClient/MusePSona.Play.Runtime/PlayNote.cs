@@ -1,6 +1,6 @@
 namespace MusePSona.Play;
 
-/// <summary>可玩键分类。连击规则跟网页 combo.js：gear / note / heart 不计；24 星与长按头相同。</summary>
+/// <summary>可玩键分类。连击规则：gear / note / heart 不计；24 星与长按头相同。</summary>
 public enum NoteCategory
 {
     Monster,

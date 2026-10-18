@@ -20,7 +20,7 @@ sys.path.insert(0, HERE)
 import _paths  # noqa: E402
 
 ROOT = os.path.dirname(HERE)
-OUT = os.path.join(ROOT, "play", "mdm_player", "assets", "md", "spine")
+OUT = os.path.join(ROOT, "PlayClient", "Unity", "Assets", "StreamingAssets", "MdLooks", "spine")
 CODES = ("01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16", "17")
 COMMON = ("0002_hp", "0003_score")
 
@@ -369,11 +369,7 @@ def main():
     print(f"common: bundle {n_c} 组")
     scenes_idx = write_index(OUT)
     print("spine/index.json", {k: len(v) for k, v in scenes_idx.items()})
-    try:
-        import sync_md_assets_to_unity as sync
-        sync.copy_looks()
-    except Exception as e:
-        print("同步 Unity 跳过：", e)
+    print("Unity MdLooks 已更新：", OUT)
 
 
 if __name__ == "__main__":

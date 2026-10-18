@@ -24,7 +24,6 @@ secrets.json
 /decoded_maps/
 /scripts/decoded_maps/
 /scripts/play_megalovania/
-/OsuGenerator/out/
 
 # Editor-only launchers stay with the separate editor repository
 /scripts/launch_editor.py
@@ -41,7 +40,6 @@ secrets.json
 # Local extracted/diagnostic images
 /_crop_*.png
 /_preview_*.png
-/play/_pendulum_preview/
 /PlayClient/_diag/
 /scripts/tools/_*.png
 
