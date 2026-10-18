@@ -1,0 +1,16 @@
+自制谱工程（CustomAlbums MDM）
+
+同目录固定文件名（不要改名）：
+  info.json     元数据
+  map1.bms … map5.bms   难度（difficultyN 为 0 表示没有该难度）
+  chart.json    编辑器飞近覆盖，可后生成
+  cover.png / cover.jpg
+  music.ogg 或 music.mp3     正曲（wav/flac 仅编辑器预览，打不进 MDM）
+  demo.ogg 或 demo.mp3       试听，建议 ≤40 秒
+
+场景 scene_01 … scene_15（info.json 的 scene，BMS 的 #GENRE）
+人物 #PLAYER 1 / 2 / 3
+
+流程：音频+曲绘放进本文件夹 → 编辑器做谱 → 自制谱.bat [6] 打包并导入 Unity。
+Unity 读的是 PlayClient\...\Charts\song.mdm，不是本文件夹名。
+本文件 NOTES.txt 不会打进 MDM。

@@ -1,0 +1,4 @@
+# Exported MDM files and unpacked comparison directories are reproducible.
+*
+!.gitignore
+

@@ -1,0 +1,14 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!129 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 26
+  productGUID: 8f4c9a2e1b3d47c0a6f0e2c4d8b1a357
+  companyName: MusePSona
+  productName: MusePSona Play
+  defaultScreenWidth: 1280
+  defaultScreenHeight: 720
+  androidRenderOutsideSafeArea: 1
+  androidEnableTango: 0
+  activeInputHandler: 0

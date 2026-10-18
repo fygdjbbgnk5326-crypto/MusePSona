@@ -1,0 +1,68 @@
+# Based on https://github.com/github/gitignore/blob/main/Unity.gitignore
+.utmp/
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+*.log
+
+# Captures may be large or contain sensitive data
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Generated IDE and build-system files
+/.vs/
+/.idea/
+/.vscode/
+/.gradle/
+/ExportedObj/
+/.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+
+# Player builds and crash tooling
+*.apk
+*.aab
+*.unitypackage
+*.unitypackage.meta
+*.app
+crashlytics-build.properties
+crashlytics-buildid.txt
+
+# Packed Addressables and generated Android StreamingAssets
+/[Aa]ssets/[Aa]ddressable[Aa]ssets[Dd]ata/*/*.bin*
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# MusePSona generated/local-only content
+/.codex-tmp/
+/_plugin_stage/
+/il2cpp/
+/MonoBleedingEdge/
+/Assets/Plugins/PlayRuntime/*.dll
+/Assets/Plugins/PlayRuntime/*.pdb
+/Assets/Plugins/PlayRuntime/*.dll.meta
+/Assets/StreamingAssets/Charts/**
+!/Assets/StreamingAssets/Charts/.gitignore
+/Assets/StreamingAssets/MdLooks/**
+!/Assets/StreamingAssets/MdLooks/.gitignore
+
