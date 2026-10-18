@@ -207,6 +207,11 @@ def export_dir():
     return d
 
 
+def decoded_maps_dir():
+    """map_decoder CSV 导出目录。只保留仓库根目录这一处。"""
+    return os.path.join(repo_root(), "decoded_maps")
+
+
 def _walk_parents(start, n=8):
     d = os.path.abspath(start)
     for _ in range(n):

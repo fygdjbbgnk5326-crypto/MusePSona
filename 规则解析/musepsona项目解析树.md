@@ -8,7 +8,7 @@ MusePSona 把官方 Muse Dash 谱面从 bundle / CSV 接到可编辑的 CustomAl
 MusePSona/
 ├── 一键启动解析.bat              # ASCII 包装 scripts/launch_parse.py（UTF-8 菜单，避开 cmd 中文乱码）
 ├── 自制谱.bat                    # ASCII 包装 scripts/launch_editor.py（拷到 LocalAppData 再开编辑器）
-├── decoded_maps/                 # map_decoder 导出目录（_index.csv 为旧表头格式）
+├── decoded_maps/                 # map_decoder 唯一 CSV 导出目录（生成物，不提交）
 ├── 规则解析/
 │   ├── musepsona项目解析树.md
 │   ├── 官谱MDM完整生成方案.md    # MusicInfo 星级、delay、编辑器契约、缺口
@@ -23,22 +23,12 @@ MusePSona/
 │   ├── official_to_mdm.py        # 权威：music_* + song_* + notedata → MDM
 │   ├── csv_mmg_convert.py        # 兜底：已导出 CSV → MDM；BMS 写出被官方管线引用
 │   ├── chart_project.py          # 自制谱工程：新建 / 预检 / 打包到 导出
-│   ├── music_to_hold.py
-│   ├── gear_wall_collapse.py
-│   ├── simplify_streams.py
-│   ├── compress_4k.py
-│   ├── optim_lanes.py
 │   ├── extract_md_sprites.py     # 可选：gamescene_01–12/common → sprites/scene_XX/ 静图主体
 │   ├── extract_md_scene_bg.py    # 可选：scene_XX 预制 Bg/Near/Mid/Far → sprites/scene_XX/bg/（scene_01～03、07、08 见词典 §1.3e）
 │   ├── extract_md_spine.py       # 可选：F8 .skel+.atlas+png → StreamingAssets/MdLooks/spine（gitignore）
 │   ├── samples/mopemope_map1.csv # 31 列官谱 CSV 样例（csv2mdm 兜底用）
-│   ├── tools/                    # 一次性分析/修补（scene_08、摆锤裁切、Spine dump）
-│   ├── decoded_maps/             # map_decoder 不传输出目录时的默认落点（根目录那份的超集）
+│   ├── tools/                    # 一次性分析/修补（scene_02/06/08、摆锤裁切）
 │   └── utils/
-│       ├── cmp_maps.py
-│       ├── inspect_125.py
-│       ├── inspect_bonesea.py
-│       ├── window.py
 │       ├── verify_official_speed.py   # 校验官谱 0S 速度档与逐音符 speed
 │       └── verify_umpopoff_speed.py   # 同上，umpopoff 专用
 ├── 自制谱/                        # 自制谱工作目录（每曲一文件夹：info.json + map*.bms + 媒体）
@@ -111,7 +101,7 @@ csv_mmg_convert.write_bms / info.json   ← 引用 CSV 方案的写出层
 <曲名>.mdm  →  谱面编辑器 ChartIo
 ```
 
-`map_decoder.py` **保留**：`list` / `export` 仍只解 `tick` + 尝试 `obj_id`，给对账和 osu 演示用。它不解 `note_uid`，不能当编辑器工程源。
+`map_decoder.py` **保留**：`list` / `export` 仍只解 `tick` + 尝试 `obj_id`，用于对账和 CSV 中间数据。它不解 `note_uid`，不能当编辑器工程源。
 
 ### 1. 原版放置记录（SerializedBytes）
 
@@ -187,7 +177,7 @@ python scripts/compare_mdm_official.py 导出/change_the_game
 python scripts/compare_mdm_official.py 某谱.mdm "D:\\steam\\...\\music_change_the_game_assets_all.bundle" --json
 # 只对照自制有的 map。键从 mapN.bms 读（**只有 53/54** 两两收条；13/14 上的点长 0F/0G 不要收成跨曲长条）；mdchart 只补飞近档。启动器 [4] 同功能。
 
-# 保留：只解析、导出 CSV（不传输出目录时默认写 scripts\decoded_maps）
+# 保留：只解析、导出 CSV（不传输出目录时默认写仓库根 decoded_maps）
 python scripts/map_decoder.py selftest            # 解码 cthugha 与基准 CSV 对比
 python scripts/map_decoder.py list [bundle目录]
 python scripts/map_decoder.py export [bundle目录] [输出目录] [--limit N] [--dict 文件 | --no-dict]
@@ -318,17 +308,6 @@ python scripts/map_decoder.py export <bundle目录> <输出目录>
 ```
 
 
-### 辅助工具
-
-```bash
-cd scripts\utils
-python cmp_maps.py a.osu b.osu
-python window.py map.osu 129000 138000
-python inspect_bonesea.py map.osu
-python inspect_125.py map.osu
-```
-
-
 ### Spine 编辑器：版本、授权、导出
 
 改图、导入官机 skel、再导出给 Unity，一律钉 **Spine 3.8.99 Professional**。
@@ -395,10 +374,9 @@ python inspect_125.py map.osu
 | `utils/verify_umpopoff_speed.py:13` | 写死本机 umpopoff bundle 绝对路径 |
 | `official_to_mdm.py` `parse_map_selection` | `--maps` 非法输入直接抛 `ValueError`，`main` 未捕获 |
 | `official_to_mdm.py:814` | 多张谱 delay 不同时，取最后处理的那张 |
-| `optim_lanes.py:9` | `S16 = 62.5` 等于写死 BPM 240，换歌失效 |
-| 多处 | 模板 JSON → TMAP、osu 物件解析 + `lane4` 各重复约 5 份；两个 `verify_*` 的 `approach_at` 与 `official_to_mdm.approach_at` 语义不同 |
+| 两个 `verify_*` | `approach_at` 与 `official_to_mdm.approach_at` 语义不同 |
 
-`decoded_maps` 重复：根目录与 `scripts\decoded_maps` 共有的 10 个 CSV 完全相同，后者多出 8bit_adventurer，且 `_index.csv` 为当前格式；根目录 `_index.csv` 是旧表头。建议统一默认输出目录后删去一份。
+`decoded_maps` 已统一为仓库根目录的单一出口；旧的 `scripts\decoded_maps` 与演示导出均已清理。该目录只存放本机可重建的 CSV，不提交到 Git。
 
 ### 谱面编辑器 / 遥测缺口
 
