@@ -28,7 +28,10 @@ public sealed partial class PlayDirector
     string _girlAction = "";
     float _girlActionAt;
     float _girlActionUntil;
+    float _girlActionDuration;
     bool _girlActionLoop;
+    string _girlIdleAction = "";
+    float _girlIdleDuration = 1f;
     float _girlHurtUntil = -99f;
     int _girlAirHit;
     int _girlRoadHit;
@@ -46,8 +49,12 @@ public sealed partial class PlayDirector
     float _girlDoublePoseY = GirlGroundY;
     float _girlMeleePoseUntil = -99f;
     int _girlHoldMask;
+    int _girlHoldScanIndex;
+    float _girlHoldScanAt = -99f;
     int _girlPrimaryHoldLane = -1;
     float _girlHoldUntil;
+    int _girlHoldExitMask;
+    float _girlHoldExitUntil = -99f;
     float _girlHoldMoveAt = -99f;
     float _girlHoldMoveUntil = -99f;
     float _girlHoldMoveFromY;
@@ -56,10 +63,14 @@ public sealed partial class PlayDirector
     MdSpineView _girlGhost;
     string _girlGhostAction = "";
     float _girlGhostAt;
+    float _girlGhostDuration;
+    string _girlGhostQueuedAction = "";
+    float _girlGhostQueuedActionAt = -99f;
     int _girlGhostAirHit;
     int _girlGhostRoadHit;
     float _girlGhostFromY = GirlGroundY;
     float _girlGhostToY = GirlGroundY;
+    float _girlGhostMoveAt = -99f;
     float _girlGhostMoveDuration;
     bool _girlGhostCenterLocked;
 
@@ -142,6 +153,7 @@ public sealed partial class PlayDirector
         // Character 排序层，不跟 Boss（Default / 3300）同一通道。
         _girl.SetSortLayer("Character");
         _girl.SetLayer(3600, 10);
+        CacheGirlIdle();
 
         // 官机给梦游少女/兔女郎另带一套 *_ghost SkeletonData，正是按住一轨时
         // 另一轨打击所用的暗色虚影；不要用普通角色简单降透明度代替。
@@ -171,6 +183,9 @@ public sealed partial class PlayDirector
         _girlGhost = null;
         _girlGhostAction = "";
         _girlGhostAt = 0f;
+        _girlGhostDuration = 0f;
+        _girlIdleAction = "";
+        _girlIdleDuration = 1f;
         _girlAirborneAt = _girlAirborneUntil = -99f;
         _girlDownStrikeAt = _girlDownStrikeUntil = -99f;
         _girlDownStrikeFrom = 0f;
@@ -267,6 +282,18 @@ public sealed partial class PlayDirector
         _girlAirborneUntil = now + GirlAirborne;
     }
 
+    void BeginGirlFallAfterHold(float now)
+    {
+        // 上轨 Hold 结束时角色已经位于最高点，不能调用普通起跳路径从地面
+        // 再播一次上升，也不额外续空。把普通空中曲线直接定位到下落段
+        // 起点，只保留 100ms SmoothStep 回落，避免尾点瞬移到地面。
+        _girlHoldMoveAt = _girlHoldMoveUntil = -99f;
+        _girlDownStrikeAt = _girlDownStrikeUntil = -99f;
+        _girlDownStrikeFrom = 0f;
+        _girlAirborneAt = now - GirlJumpRise;
+        _girlAirborneUntil = now + (GirlAirborne - GirlAirHold);
+    }
+
     void BeginGirlDownStrike(float now)
     {
         _girlDownStrikeFrom = GirlAirLiftAt(now, _girlAirborneAt, _girlAirborneUntil);
@@ -298,15 +325,14 @@ public sealed partial class PlayDirector
         TickGirlGhost(now);
         if (!string.IsNullOrEmpty(_girlAction))
         {
-            var action = _girl.Skeleton?.Data?.FindAnimation(_girlAction);
-            if (action == null)
+            if (_girlActionDuration <= 0f)
             {
                 ClearGirlAction();
             }
             else
             {
                 var age = Mathf.Max(0f, now - _girlActionAt);
-                var keep = _girlActionLoop ? now < _girlActionUntil : age <= action.Duration;
+                var keep = _girlActionLoop ? now < _girlActionUntil : age <= _girlActionDuration;
                 if (keep)
                 {
                     if (_girlActionLoop)
@@ -322,17 +348,22 @@ public sealed partial class PlayDirector
         }
 
         // 官机常态为 run；只有缺少 run 的角色包才退到 standby/idle。
-        var idle = _girl.Skeleton?.Data?.FindAnimation("run")
-            ?? _girl.Skeleton?.Data?.FindAnimation("standby")
-            ?? _girl.Skeleton?.Data?.FindAnimation("idle")
-            ?? _girl.Skeleton?.Data?.FindAnimation("wait");
-        var clip = idle != null ? idle.Name : null;
-        if (string.IsNullOrEmpty(clip) && _girl.Skeleton?.Data?.Animations.Count > 0)
-            clip = _girl.Skeleton.Data.Animations.Items[0].Name;
-        if (string.IsNullOrEmpty(clip)) return;
-        var dur = _girl.Skeleton.Data.FindAnimation(clip)?.Duration ?? 1f;
-        var t = dur > 0.01f ? _girlClock % dur : 0f;
-        _girl.PoseLoop(clip, t);
+        if (string.IsNullOrEmpty(_girlIdleAction)) return;
+        var t = _girlIdleDuration > 0.01f ? _girlClock % _girlIdleDuration : 0f;
+        _girl.PoseLoop(_girlIdleAction, t);
+    }
+
+    void CacheGirlIdle()
+    {
+        var data = _girl?.Skeleton?.Data;
+        var idle = data?.FindAnimation("run")
+            ?? data?.FindAnimation("standby")
+            ?? data?.FindAnimation("idle")
+            ?? data?.FindAnimation("wait");
+        if (idle == null && data?.Animations.Count > 0)
+            idle = data.Animations.Items[0];
+        _girlIdleAction = idle?.Name ?? "";
+        _girlIdleDuration = idle?.Duration ?? 1f;
     }
 
     bool GirlCenterPoseActive(float now)
@@ -368,6 +399,7 @@ public sealed partial class PlayDirector
         _girlAction = "";
         _girlActionAt = 0f;
         _girlActionUntil = 0f;
+        _girlActionDuration = 0f;
         _girlActionLoop = false;
         _girlHurtUntil = -99f;
         _girlMasherPoseUntil = -99f;
@@ -375,18 +407,32 @@ public sealed partial class PlayDirector
         _girlDoublePoseY = GirlGroundY;
         _girlMeleePoseUntil = -99f;
         _girlHoldMask = 0;
+        _girlHoldScanIndex = 0;
+        _girlHoldScanAt = -99f;
         _girlPrimaryHoldLane = -1;
         _girlHoldUntil = 0f;
+        _girlHoldExitMask = 0;
+        _girlHoldExitUntil = -99f;
         _girlHoldMoveAt = _girlHoldMoveUntil = -99f;
         HideGirlGhost();
     }
 
     bool GirlIsAir()
+        => GirlIsAirAt(GirlNow(), downStrikeIsAir: true);
+
+    /// <summary>
+    /// 角色下砍时画面会从上轨平滑落向下轨，但按下下轨键的当帧就应当
+    /// 切换碰撞轨道。若判定也等到下砍动画结束，已经提前下跳仍会被上轨齿轮命中。
+    /// </summary>
+    bool GirlCollisionIsAir(float now)
+        => GirlIsAirAt(now, downStrikeIsAir: false);
+
+    bool GirlIsAirAt(float now, bool downStrikeIsAir)
     {
         if (_girlHoldMask == 2) return true;
         if (_girlHoldMask is 1 or 3) return false;
-        if (GirlNow() < _girlDownStrikeUntil) return true;
-        if (GirlNow() < _girlAirborneUntil) return true;
+        if (now < _girlDownStrikeUntil) return downStrikeIsAir;
+        if (now < _girlAirborneUntil) return true;
         if (string.IsNullOrEmpty(_girlAction)) return false;
         if (_girlAction == "down_hit" || _girlAction == "down_press_hit") return false;
         return _girlAction == "jump" || _girlAction == "jump_hurt"

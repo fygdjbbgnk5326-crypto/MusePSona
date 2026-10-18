@@ -1309,6 +1309,23 @@ def walk_group(go, gx, gy, gsx, gsy, items, sprites, spines, skel_names, vis, cl
     was_active = bool(getattr(go, "m_IsActive", True))
     if not was_active and not drive:
         return
+    parent = parent_go(go)
+    # scene_09 的 dragon/dialog_box (3) 虽沿用 Mid_B 对话框的 -41，实际
+    # 隶属 Far_A。导出时必须跟随龙进入远景层，并把框及其 smile01 子图
+    # 夹在龙(-63)之后、Mid_B 雕像(-51/-50)之前，避免任一部分跨层盖脸。
+    dragon_dialog = (
+        (go.m_Name or "") == "dialog_box (3)"
+        and parent is not None
+        and (parent.m_Name or "").lower() == "dragon"
+    )
+    dialog_parent = parent_go(parent) if parent is not None else None
+    dragon_dialog_symbol = (
+        (go.m_Name or "").lower() == "smile01"
+        and parent is not None
+        and (parent.m_Name or "") == "dialog_box (3)"
+        and dialog_parent is not None
+        and (dialog_parent.m_Name or "").lower() == "dragon"
+    )
     # scene_02 街机 Fx：官机整棵 Fx（s02_Fx_heart / mid_H / mid_I_machines_icon）默认关。
     # 父级有 Animator 时 drive 会把它们抽出来，叠在柜面孔上。
     if not was_active:
@@ -1541,6 +1558,10 @@ def walk_group(go, gx, gy, gsx, gsy, items, sprites, spines, skel_names, vis, cl
                 # 官机 mid_H7 是 -43，框/标题 -42～-40。叠层小窗必须比底盘更靠前，否则会被脸屏盖住。
                 if nest_pop:
                     order = -39 + nest_i
+                if dragon_dialog:
+                    order = -62
+                elif dragon_dialog_symbol:
+                    order = -61
                 if name == "far_rocket":
                     # 贴图已是紫色；再乘 SR 色会融进天空。order 提到远楼前面、近景后面，否则 -78 被 Far 楼挡住。
                     color = (1.0, 1.0, 1.0, color[3] if color[3] > 0.01 else 1.0)

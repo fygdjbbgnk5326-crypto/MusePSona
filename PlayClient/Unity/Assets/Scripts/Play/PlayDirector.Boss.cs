@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using MusePSona.Play;
 using UnityEngine;
 
@@ -98,13 +97,19 @@ public sealed partial class PlayDirector
             _bossHomeReady = true;
         }
         _boss.Spine.PoseTime(clip, time, loop);
-        var aspect = Camera.main != null ? Camera.main.aspect : 16f / 9f;
+        var aspect = _mainCamera != null ? _mainCamera.aspect : 16f / 9f;
         var bossDown = _bossHomeTrack ? Flight.ShadowTrackY : BossTimeline.BodyY;
         var dest = Stage(BossTimeline.BodyXForAspect(aspect), bossDown, -3.0f);
         var pos = dest - _bossHome;
         _boss.Root.position = pos;
-        _bossHud = clip + " " + time.ToString("0.00")
-            + " v" + _boss.Spine.VisualSize.ToString("0.0");
+        // 这是调试 HUD，不必按渲染帧重新格式化字符串；10Hz 足够读数，
+        // 同时消除 Boss 常驻阶段的逐帧托管分配。
+        if (Time.unscaledTime >= _bossHudNextAt)
+        {
+            _bossHudNextAt = Time.unscaledTime + 0.1f;
+            _bossHud = clip + " " + time.ToString("0.00")
+                + " v" + _boss.Spine.VisualSize.ToString("0.0");
+        }
     }
 
     static bool BossLeaveClip(string clip)
@@ -124,7 +129,7 @@ public sealed partial class PlayDirector
     void MashClip(BossTimeline.View view, float chartNow, Spine.SkeletonData data, ref string want, ref float time, ref bool loop)
     {
         var id = view.MashId;
-        var note = _session.Notes.FirstOrDefault(n => n.Id == id);
+        var note = _session.NoteById(id);
         if (note == null) return;
         var g = _session.GradeOf(id);
         var hit = (float)note.TimeSec;
@@ -219,8 +224,9 @@ public sealed partial class PlayDirector
         if (end == null) return 0f;
         if (!TryDashTrack(data, end, out var track, out var t0, out var x0, out var t1, out var x1, out var curve, out var xHome))
             return 0f;
-        SampleDash(track, t0, x0, t1, x1, curve, xHome, out var clipT, out var world);
-        return ClipAtScreen(clipT, world, screenX);
+        var aspect = Camera.main != null ? Camera.main.aspect : 16f / 9f;
+        if (aspect < 1.2f) aspect = 1.2f;
+        return ClipAtScreen(track, t0, x0, t1, x1, curve, xHome, aspect, screenX, out _);
     }
 
     static float DashOnJudge(float duration, Spine.TranslateTimeline track, float t0, float x0, float t1, float x1, int curve, float xHome, float timeFromEnd)
@@ -228,56 +234,46 @@ public sealed partial class PlayDirector
         var aspect = Camera.main != null ? Camera.main.aspect : 16f / 9f;
         if (aspect < 1.2f) aspect = 1.2f;
         var left = -Flight.CameraSize * aspect - 0.8f;
-        SampleDash(track, t0, x0, t1, x1, curve, xHome, out var clipT, out var world);
+        var body = BossTimeline.BodyXForAspect(aspect);
+        var unit = (Mathf.Abs(xHome) > 80f || Mathf.Abs(x0) > 80f ? 0.005f : 1f) * 0.5f;
+        var from = body + (x0 - xHome) * unit;
         const float arrive = 0.70f;
         const float stay = 1.35f;
         const float leave = 1.85f;
-        var from = world.Length > 0 ? world[0] : BossTimeline.BodyXForAspect(aspect);
         float want;
         if (timeFromEnd <= 0f) want = from;
         else if (timeFromEnd < arrive) want = Mathf.Lerp(from, Flight.HitX, timeFromEnd / arrive);
         else if (timeFromEnd < stay) want = Flight.HitX;
         else if (timeFromEnd < leave) want = Mathf.Lerp(Flight.HitX, left, (timeFromEnd - stay) / (leave - stay));
         else return duration + (timeFromEnd - leave);
-        return ClipAtScreen(clipT, world, want);
+        return ClipAtScreen(track, t0, x0, t1, x1, curve, xHome, aspect, want, out _);
     }
 
-    static void SampleDash(Spine.TranslateTimeline track, float t0, float x0, float t1, float x1, int curve, float xHome, out float[] clipT, out float[] world)
+    static float ClipAtScreen(Spine.TranslateTimeline track, float t0, float x0, float t1,
+        float x1, int curve, float xHome, float aspect, float screenX, out float firstWorld)
     {
-        var aspect = Camera.main != null ? Camera.main.aspect : 16f / 9f;
-        if (aspect < 1.2f) aspect = 1.2f;
         var body = BossTimeline.BodyXForAspect(aspect);
         // 平移键有的已乘 0.005。root.scaleX = 0.5，世界位移再乘这一层。
         var unit = (Mathf.Abs(xHome) > 80f || Mathf.Abs(x0) > 80f ? 0.005f : 1f) * 0.5f;
         const int n = 64;
-        clipT = new float[n + 1];
-        world = new float[n + 1];
         var span = Mathf.Max(0.001f, t1 - t0);
+        var bestTime = t0;
+        firstWorld = body + (x0 - xHome) * unit;
+        var bestDist = Mathf.Abs(firstWorld - screenX);
         for (var i = 0; i <= n; i++)
         {
             var p = i / (float)n;
             var along = track.GetCurvePercent(curve, p);
-            clipT[i] = t0 + span * p;
-            world[i] = body + (x0 + (x1 - x0) * along - xHome) * unit;
-        }
-    }
-
-    static float ClipAtScreen(float[] clipT, float[] world, float screenX)
-    {
-        if (clipT == null || clipT.Length == 0) return 0f;
-        var best = 0;
-        var bestDist = Mathf.Abs(world[0] - screenX);
-        for (var i = 1; i < clipT.Length; i++)
-        {
-            if (world[i] < screenX - 0.35f) continue;
-            var dist = Mathf.Abs(world[i] - screenX);
+            var world = body + (x0 + (x1 - x0) * along - xHome) * unit;
+            if (world < screenX - 0.35f) continue;
+            var dist = Mathf.Abs(world - screenX);
             if (dist < bestDist)
             {
                 bestDist = dist;
-                best = i;
+                bestTime = t0 + span * p;
             }
         }
-        return clipT[best];
+        return bestTime;
     }
 
     static bool TryDashTrack(Spine.SkeletonData data, Spine.Animation anim, out Spine.TranslateTimeline track, out float t0, out float x0, out float t1, out float x1, out int curve, out float xHome)

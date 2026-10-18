@@ -43,7 +43,15 @@ public sealed partial class PlayDirector
     {
         var g = _session.GradeOf(n.Id);
         var data = a.Spine.Skeleton.Data;
-        var inClip = MdSpine.PickClip(data, n);
+        if (!a.InClipReady)
+        {
+            a.InClip = MdSpine.PickClip(data, n);
+            a.InClipDuration = !string.IsNullOrEmpty(a.InClip)
+                ? data.FindAnimation(a.InClip)?.Duration ?? Flight.DurationSec(n)
+                : Flight.DurationSec(n);
+            a.InClipReady = true;
+        }
+        var inClip = a.InClip;
         Vector3 dest;
         var pinned = false;
         var followDest = false;
@@ -193,8 +201,7 @@ public sealed partial class PlayDirector
             }
             var through = !n.NeedsHit && chartNow >= (float)n.TimeSec;
             var clipTime = chartNow - (float)n.TimeSec + Flight.DurationSec(n);
-            var anim = inClip != null ? data.FindAnimation(inClip) : null;
-            var clipEnd = anim != null ? anim.Duration : Flight.DurationSec(n);
+            var clipEnd = a.InClipDuration;
             if (through && clipTime > clipEnd)
             {
                 a.Spine.PoseTime(inClip, clipEnd, false);
@@ -213,7 +220,6 @@ public sealed partial class PlayDirector
         if (n.Category == NoteCategory.Masher)
         {
             dest.z = -0.12f;
-            ApplyActorLayer(a);
         }
         var vis = a.Spine.VisualSize;
         var k = worldScale;

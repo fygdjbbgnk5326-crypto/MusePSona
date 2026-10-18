@@ -80,15 +80,30 @@ public sealed partial class PlayDirector
         {
             foreach (var r in a.Root.GetComponentsInChildren<Renderer>())
             {
-                if (r != null) Destroy(r.material);
+                if (r == null || r.sharedMaterial == null) continue;
+                var material = r.sharedMaterial;
+                r.sharedMaterial = null;
+                Destroy(material);
             }
         }
+        DestroyHoldLayerResources(a.HoldNoteUp);
+        DestroyHoldLayerResources(a.HoldNoteDown);
         for (var i = a.Root.childCount - 1; i >= 0; i--)
             DestroyImmediate(a.Root.GetChild(i).gameObject);
         a.Spine = null;
         a.Body = a.Extra = a.Head = a.Tail = null;
         a.LooksSprite = false;
         a.Tint = null;
+        a.InClip = null;
+        a.InClipDuration = 0f;
+        a.InClipReady = false;
+        a.HoldNoteUp = null;
+        a.HoldNoteDown = null;
+        a.Alpha = -1f;
+        a.HoldNoteUpTexture = null;
+        a.HoldNoteDownTexture = null;
+        a.HoldNoteTexturesReady = false;
+        a.HoldNoteLayoutReady = false;
         a.LooksScene = _scene;
         if (TryLooks(a, n))
             ApplyActorLayer(a);

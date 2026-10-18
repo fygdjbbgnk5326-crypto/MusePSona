@@ -7,6 +7,10 @@ using UnityEngine;
 /// <summary>IMGUI：状态栏、难度、切景调试。</summary>
 public sealed partial class PlayDirector
 {
+    readonly Texture2D[] _scoreDigitTextures = new Texture2D[10];
+    bool _scoreDigitTexturesReady;
+    bool _scoreDigitTexturesFound;
+
     void OnGUI()
     {
         var e = UnityEngine.Event.current;
@@ -24,32 +28,211 @@ public sealed partial class PlayDirector
         GUI.FocusControl(null);
 
         EnsureStyles();
+        if (_audioOffsetPanelOpen)
+        {
+            DrawAudioOffsetPanel();
+            return;
+        }
         if (_session == null)
         {
             GUI.Label(new Rect(12, 12, 720, 40), "无谱面  Assets/StreamingAssets/" + chartFile, _hudStyle);
             DrawSongSwitch();
             DrawMapButtons();
+            DrawAudioOffsetTest();
             if (TempCharSwitch) DrawTempCharButtons();
             else if (TempSceneSwitch) DrawTempSceneButtons();
             return;
         }
+        if (_resultOpen)
+        {
+            DrawResultPanel();
+            return;
+        }
+        if (_fullComboPlaying)
+        {
+            // 曲终演出保持官机式干净画面：只留左上分数及场景内原有 Combo，
+            // 隐藏调试按钮/时钟，FULL COMBO 始终画在最上层。
+            DrawScoreHud();
+            DrawFullComboOverlay();
+            return;
+        }
 
-        var map = _session.Difficulty;
-        var mode = autoplay ? "自动" : "手动 DFJK";
-        if (_paused) mode = "暂停";
-        var sceneHud = _session.SceneAt(Clock());
-        if (_forceScene.Length > 0) sceneHud = _forceScene + " 强制";
-        GUI.Label(new Rect(12, 10, 980, 22),
-            $"{_session.Song.Document.Meta.Name}  map{map}  {mode}  P{_session.Perfects} G{_session.Greats} M{_session.Misses}  {sceneHud}",
-            _hudStyle);
-        GUI.Label(new Rect(12, 32, 980, 22),
+        RefreshHudText();
+        DrawScoreHud();
+        var debugX = Mathf.Max(12f, 310f * HudReferenceScale());
+        var debugW = Mathf.Max(120f, Screen.width - debugX - 12f);
+        GUI.Label(new Rect(debugX, 10, debugW, 22), _hudStatusText, _hudStyle);
+        GUI.Label(new Rect(debugX, 32, debugW, 22),
             TempCharSwitch
-                ? "D/F空中 J/K地面  F1切模式 F2手动重开 F3自动重开  空格暂停 R重开  F4/F8换歌 F6/F7换角色"
+                ? KeyboardHint() + "  F1切模式 F2手动重开 F3自动重开  空格暂停 R重开  F4/F8换歌 F6/F7换角色  F12校准"
                 : TempSceneSwitch
-                ? "D/F空中 J/K地面  F1切模式 F2手动重开 F3自动重开  空格暂停 R重开  F4/F8换歌 F6/F7切景"
-                : "D/F空中 J/K地面  F1切模式 F2手动重开 F3自动重开  空格暂停 R重开  F4/F8换歌",
+                ? KeyboardHint() + "  F1切模式 F2手动重开 F3自动重开  空格暂停 R重开  F4/F8换歌 F6/F7切景  F12校准"
+                : KeyboardHint() + "  F1切模式 F2手动重开 F3自动重开  空格暂停 R重开  F4/F8换歌  F12校准",
             _hudStyle);
-        // TEMP 测试读秒，过后删除。
+        GUI.Label(new Rect(debugX, 56, debugW, 48), _hudClockText, _clockStyle);
+        DrawSongSwitch();
+        DrawMapButtons();
+        DrawAudioOffsetTest();
+        DrawAdvancedJudgeToggle();
+        DrawKeyboardLayoutToggle();
+        if (TempCharSwitch) DrawTempCharButtons();
+        else if (TempSceneSwitch) DrawTempSceneButtons();
+
+        const float comboY = 58f;
+        const float comboH = 62f;
+        if (_session.Combo > 0 && _comboSpine == null && _comboNumRoot == null)
+            GUI.Label(new Rect((Screen.width - 360f) * 0.5f, comboY, 360f, comboH), _hudComboText, _comboStyle);
+    }
+
+    static float HudReferenceScale()
+        => Mathf.Clamp(Screen.width / 1920f, 0.5f, 1.5f);
+
+    /// <summary>
+    /// 官机 Score 根锚在左上 (80,130)，数字字号 72，AP 图标是 68×66 的
+    /// icon_ap。这里按 1920 宽参考缩放，避免 IMGUI 在小 GameView 中挤占轨道。
+    /// </summary>
+    void DrawScoreHud()
+    {
+        if (_session == null) return;
+        var scale = HudReferenceScale();
+        var x = 60f * scale;
+        var y = 2f * scale;
+        var score = _session.Score.ToString();
+        _scoreHudStyle.fontSize = Mathf.Max(32, Mathf.RoundToInt(72f * scale));
+        _scoreTitleFallbackStyle.fontSize = Mathf.Max(18, Mathf.RoundToInt(40f * scale));
+
+        var oldColor = GUI.color;
+        var numberWidth = DrawOfficialScoreDigits(score, x, y, scale);
+        if (numberWidth <= 0f)
+        {
+            var content = new GUIContent(score);
+            var numberSize = _scoreHudStyle.CalcSize(content);
+            numberWidth = numberSize.x;
+            // 官机数字使用浅青色；资源未导出时保留旧字体回退。
+            var scoreRect = new Rect(x, y, Mathf.Max(180f * scale, numberSize.x + 8f), 72f * scale);
+            GUI.color = new Color(0.20f, 0.06f, 0.34f, 0.85f);
+            GUI.Label(new Rect(scoreRect.x + 2f * scale, scoreRect.y + 3f * scale,
+                scoreRect.width, scoreRect.height), content, _scoreHudStyle);
+            GUI.color = new Color(0.747f, 1f, 1f, 1f);
+            GUI.Label(scoreRect, content, _scoreHudStyle);
+        }
+        GUI.color = oldColor;
+
+        if (_session.Greats == 0 && _session.Misses == 0)
+        {
+            var apX = x + numberWidth + 8f * scale;
+            if (MdLooks.TrySprite(_scene, "hud_ap", out var ap) && ap != null)
+                GUI.DrawTexture(new Rect(apX, y + 7f * scale, 68f * scale, 66f * scale),
+                    ap, ScaleMode.ScaleToFit, true);
+            else
+                GUI.Label(new Rect(apX, y + 8f * scale, 58f * scale, 40f * scale), "AP", _scoreTitleFallbackStyle);
+        }
+
+        if (MdLooks.TrySprite(_scene, "hud_score_title", out var title) && title != null)
+            GUI.DrawTexture(new Rect(x, y + 70f * scale, 95f * scale, 46f * scale),
+                title, ScaleMode.ScaleToFit, true);
+        else
+            GUI.Label(new Rect(x, y + 70f * scale, 96f * scale, 46f * scale),
+                "得分", _scoreTitleFallbackStyle);
+    }
+
+    float DrawOfficialScoreDigits(string score, float x, float y, float scale)
+    {
+        if (!_scoreDigitTexturesReady)
+        {
+            _scoreDigitTexturesFound = true;
+            for (var i = 0; i < _scoreDigitTextures.Length; i++)
+            {
+                if (!MdLooks.TrySprite(_scene, "score_digit_" + i, out _scoreDigitTextures[i])
+                    || _scoreDigitTextures[i] == null)
+                {
+                    _scoreDigitTexturesFound = false;
+                    break;
+                }
+            }
+            _scoreDigitTexturesReady = true;
+        }
+        if (!_scoreDigitTexturesFound || string.IsNullOrEmpty(score)) return 0f;
+
+        var width = 0f;
+        // 导出的单字四周各含 2px 透明边；Unity UI Text 按字体 advance
+        // 排列，不应把相邻字的两侧 padding 再算作字距。
+        const float transparentPadding = 4f;
+        for (var i = 0; i < score.Length; i++)
+        {
+            var digit = score[i] - '0';
+            if (digit < 0 || digit > 9) continue;
+            var tex = _scoreDigitTextures[digit];
+            width += Mathf.Max(1f, tex.width - transparentPadding) * scale;
+        }
+        width += transparentPadding * scale;
+
+        var cursor = x;
+        for (var i = 0; i < score.Length; i++)
+        {
+            var digit = score[i] - '0';
+            if (digit < 0 || digit > 9) continue;
+            var tex = _scoreDigitTextures[digit];
+            var rect = new Rect(cursor, y + 7f * scale,
+                tex.width * scale, tex.height * scale);
+            // UI Text 本身没有描边；轻微紫影只用于复杂背景上的可读性。
+            GUI.color = new Color(0.26f, 0.08f, 0.38f, 0.70f);
+            GUI.DrawTexture(new Rect(rect.x + 2f * scale, rect.y + 3f * scale,
+                rect.width, rect.height), tex, ScaleMode.StretchToFill, true);
+            GUI.color = Color.white;
+            GUI.DrawTexture(rect, tex, ScaleMode.StretchToFill, true);
+            cursor += Mathf.Max(1f, tex.width - transparentPadding) * scale;
+        }
+        return width;
+    }
+
+    void DrawAdvancedJudgeToggle()
+    {
+        const float width = 202f;
+        const float height = 26f;
+        var x = Mathf.Max(12f, Screen.width - width - 12f);
+        var y = 88f;
+        var old = GUI.backgroundColor;
+        GUI.backgroundColor = _showAdvancedJudge
+            ? new Color(0.45f, 0.90f, 0.72f)
+            : new Color(0.62f, 0.64f, 0.70f);
+        var label = "EARLY/LATE 小P  " + (_showAdvancedJudge ? "开" : "关");
+        if (GuiClick(new Rect(x, y, width, height), label))
+        {
+            _showAdvancedJudge = !_showAdvancedJudge;
+            PlayerPrefs.SetInt(AdvancedJudgePrefsKey, _showAdvancedJudge ? 1 : 0);
+            PlayerPrefs.Save();
+        }
+        GUI.backgroundColor = old;
+    }
+
+    void DrawKeyboardLayoutToggle()
+    {
+        const float width = 202f;
+        const float height = 26f;
+        var x = Mathf.Max(12f, Screen.width - width - 12f);
+        var y = 118f;
+        var old = GUI.backgroundColor;
+        GUI.backgroundColor = new Color(0.64f, 0.76f, 0.96f);
+        if (GuiClick(new Rect(x, y, width, height), "键位  " + KeyboardLayoutName()))
+            CycleKeyboardLayout();
+        GUI.backgroundColor = old;
+    }
+
+    void RefreshHudText()
+    {
+        if (_session == null) return;
+        if (Time.unscaledTime < _hudTextNextAt && _hudStatusText.Length > 0) return;
+        _hudTextNextAt = Time.unscaledTime + 0.05f;
+        var mode = _paused ? "暂停" : autoplay ? "自动" : "手动 " + KeyboardLayoutName();
+        var clock = Clock();
+        var sceneHud = _forceScene.Length > 0
+            ? _forceScene + " 强制"
+            : _session.SceneAt(clock);
+        _hudStatusText = _session.Song.Document.Meta.Name + "  map" + _session.Difficulty
+            + "  " + mode + "  P" + _session.Perfects + " G" + _session.Greats
+            + " M" + _session.Misses + "  S" + _session.Score.ToString("000000")
+            + "  " + _session.Accuracy.ToString("0.00") + "%  " + sceneHud;
         var belt = "";
         if (_bg != null)
         {
@@ -60,16 +243,28 @@ public sealed partial class PlayDirector
                 break;
             }
         }
-        GUI.Label(new Rect(12, 56, 720, 48), Clock().ToString("0.00") + "s" + belt + "  " + _bossHud, _clockStyle);
-        DrawSongSwitch();
-        DrawMapButtons();
-        if (TempCharSwitch) DrawTempCharButtons();
-        else if (TempSceneSwitch) DrawTempSceneButtons();
+        _hudClockText = clock.ToString("0.00") + "s" + belt + "  " + _bossHud;
+        _hudComboText = _session.Combo.ToString();
+    }
 
-        const float comboY = 58f;
-        const float comboH = 62f;
-        if (_session.Combo > 0 && _comboSpine == null && _comboNumRoot == null)
-            GUI.Label(new Rect((Screen.width - 360f) * 0.5f, comboY, 360f, comboH), _session.Combo.ToString(), _comboStyle);
+    void DrawAudioOffsetTest()
+    {
+        const float buttonW = 72f;
+        const float valueW = 126f;
+        const float h = 26f;
+        const float gap = 4f;
+        var total = buttonW + valueW + gap;
+        var x = Mathf.Max(12f, Screen.width - total - 12f);
+        var y = 58f;
+        var old = GUI.backgroundColor;
+        GUI.backgroundColor = Time.unscaledTime < _audioOffsetNoticeUntil
+            ? new Color(1f, 0.85f, 0.2f)
+            : new Color(0.95f, 0.95f, 0.98f);
+        GUI.Box(new Rect(x, y, valueW, h), "偏移 " + AudioOffset.Format(_audioOffsetMs));
+        x += valueW + gap;
+        GUI.backgroundColor = new Color(0.62f, 0.78f, 0.95f);
+        if (GuiClick(new Rect(x, y, buttonW, h), "校准 F12")) ToggleAudioOffsetPanel();
+        GUI.backgroundColor = old;
     }
 
     float ChromeBottom()
@@ -204,6 +399,23 @@ public sealed partial class PlayDirector
             clipping = TextClipping.Overflow
         };
         _clockStyle.normal.textColor = new Color(1f, 0.92f, 0.35f);
+        _scoreHudStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 72,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.UpperLeft,
+            clipping = TextClipping.Overflow,
+            margin = new RectOffset(0, 0, 0, 0),
+            padding = new RectOffset(0, 0, 0, 0)
+        };
+        _scoreTitleFallbackStyle = new GUIStyle(GUI.skin.label)
+        {
+            fontSize = 40,
+            fontStyle = FontStyle.Bold,
+            alignment = TextAnchor.MiddleLeft,
+            clipping = TextClipping.Overflow
+        };
+        _scoreTitleFallbackStyle.normal.textColor = new Color(0.76f, 0.66f, 1f);
         _gradeStyle = new GUIStyle(GUI.skin.label)
         {
             fontSize = 22,

@@ -132,7 +132,7 @@ public static class MdSceneBg
     public sealed class Mover
     {
         public Transform T;
-        public Renderer Rend;
+        public Material Mat;
         public Vector3 Base;
         public Color Tint;
         public float BobAmp, BobPeriod, BobPhase, BlinkPeriod;
@@ -689,7 +689,7 @@ public static class MdSceneBg
                             view.Movers.Add(new Mover
                             {
                                 T = quad.transform,
-                                Rend = r,
+                                Mat = mat,
                                 Base = quad.transform.localPosition,
                                 Tint = c,
                                 BobAmp = it.bobAmp * worldScale,
@@ -1003,13 +1003,13 @@ public static class MdSceneBg
             p.x += d.x;
             p.y += d.y;
             m.T.localPosition = p;
-            if (m.BlinkPeriod > 0.05f && m.Rend != null && m.Rend.material != null)
+            if (m.BlinkPeriod > 0.05f && m.Mat != null)
             {
                 var a = 0.35f + 0.65f * (0.5f + 0.5f * Mathf.Sin(chartNow * (Mathf.PI * 2f) / m.BlinkPeriod + m.BobPhase));
                 var col = m.Tint;
                 col.a = m.Tint.a * a;
-                m.Rend.material.color = col;
-                if (m.Rend.material.HasProperty("_Color")) m.Rend.material.SetColor("_Color", col);
+                m.Mat.color = col;
+                if (m.Mat.HasProperty("_Color")) m.Mat.SetColor("_Color", col);
             }
         }
         }
@@ -1211,7 +1211,28 @@ public static class MdSceneBg
     public static void Drop(View view)
     {
         if (view == null) return;
-        if (view.Root != null) UnityEngine.Object.Destroy(view.Root.gameObject);
+        if (view.Root != null)
+        {
+            // 背景中的材质、粒子材质以及切片 Mesh 都是运行时 new 出来的。
+            // Destroy(GameObject) 不会释放这些原生资源，反复切景后会持续累积。
+            var materials = new HashSet<Material>();
+            foreach (var r in view.Root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null || r.sharedMaterial == null) continue;
+                var material = r.sharedMaterial;
+                r.sharedMaterial = null;
+                if (materials.Add(material)) UnityEngine.Object.Destroy(material);
+            }
+            foreach (var mf in view.Root.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (mf == null || mf.sharedMesh == null) continue;
+                var mesh = mf.sharedMesh;
+                if (mesh.name is not ("Slice3" or "Trapezoid")) continue;
+                mf.sharedMesh = null;
+                UnityEngine.Object.Destroy(mesh);
+            }
+            UnityEngine.Object.Destroy(view.Root.gameObject);
+        }
         foreach (var t in view.Textures)
             if (t != null) UnityEngine.Object.Destroy(t);
         view.Textures.Clear();
@@ -1220,6 +1241,7 @@ public static class MdSceneBg
         view.Clippers.Clear();
         view.Poppers.Clear();
         view.Followers.Clear();
+        view.Spinners.Clear();
         view.Bands.Clear();
         view.Layers.Clear();
     }

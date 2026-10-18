@@ -1,12 +1,21 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using MusePSona.Play;
 using UnityEngine;
 
 /// <summary>快捷键、换谱、换歌。</summary>
 public sealed partial class PlayDirector
 {
+    sealed class PreparedSong
+    {
+        public PlaySong Song;
+        public PlaySession Session;
+        public int Map;
+    }
+
     void CycleForceScene(int delta)
     {
         var cur = _forceScene.Length > 0 ? _forceScene : (_scene.Length > 0 ? _scene : "scene_01");
@@ -20,6 +29,49 @@ public sealed partial class PlayDirector
 
     void HandleKey(KeyCode key)
     {
+        // 曲终 Full Combo 演出由固定 2 秒时间线接管，期间禁止暂停、换歌、
+        // 重开或打开校准页，避免演出状态被半途留在场景中。
+        if (_fullComboPlaying) return;
+        if (key == KeyCode.F12)
+        {
+            ToggleAudioOffsetPanel();
+            return;
+        }
+        if (key == KeyCode.Escape && _audioOffsetPanelOpen)
+        {
+            CloseAudioOffsetPanel();
+            return;
+        }
+        if (key == KeyCode.F9)
+        {
+            ChangeAudioOffset(ShiftHeld() ? -AudioOffset.FastStepMs : -AudioOffset.StepMs);
+            return;
+        }
+        if (key == KeyCode.F10)
+        {
+            ChangeAudioOffset(ShiftHeld() ? AudioOffset.FastStepMs : AudioOffset.StepMs);
+            return;
+        }
+        if (key == KeyCode.F11)
+        {
+            SetAudioOffset(0);
+            return;
+        }
+        if (_audioOffsetPanelOpen) return;
+        if (_resultOpen)
+        {
+            if (key is KeyCode.R or KeyCode.Return or KeyCode.KeypadEnter)
+                RestartFromResult();
+            else if (key == KeyCode.F2)
+                RestartFromResult(false);
+            else if (key == KeyCode.F3)
+                RestartFromResult(true);
+            else if (key is KeyCode.F4 or KeyCode.PageDown)
+                LeaveResultForSong(1);
+            else if (key is KeyCode.F8 or KeyCode.PageUp)
+                LeaveResultForSong(-1);
+            return;
+        }
         if (key == KeyCode.F1)
         {
             autoplay = !autoplay;
@@ -109,9 +161,9 @@ public sealed partial class PlayDirector
         }
         if (_session == null || _paused || autoplay) return;
         var now = InputClock();
-        if (key is not (KeyCode.D or KeyCode.F or KeyCode.J or KeyCode.K)) return;
+        if (!TryMappedLane(key, now, out var air)) return;
         var oneKey = SceneTimeline.RulesFor(_session.SceneAt(now)).OneKey;
-        var air = !oneKey && key is KeyCode.D or KeyCode.F;
+        if (oneKey) air = false;
         var grade = _session.HitLane(air, now);
         if (_playInputFrame != Time.frameCount)
         {
@@ -133,21 +185,166 @@ public sealed partial class PlayDirector
 
     int HeldPlayLaneMask(float now)
     {
-        var anyAir = Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.F);
-        var anyRoad = Input.GetKey(KeyCode.J) || Input.GetKey(KeyCode.K);
+        var anyAir = AnyMappedKeyHeld(AirKeys());
+        var anyRoad = AnyMappedKeyHeld(GroundKeys());
         if (_session != null && SceneTimeline.RulesFor(_session.SceneAt(now)).OneKey)
             return anyAir || anyRoad ? 3 : 0;
         return (anyRoad ? 1 : 0) | (anyAir ? 2 : 0);
     }
 
-    static bool IsPlayKey(KeyCode key)
-        => key is KeyCode.D or KeyCode.F or KeyCode.J or KeyCode.K;
+    KeyCode[] AirKeys()
+        => _keyboardLayout switch
+        {
+            KeyboardLayout.Default => KeysDefaultAir,
+            KeyboardLayout.DefaultReverse => KeysDefaultGround,
+            KeyboardLayout.ModeB => KeysModeBAir,
+            KeyboardLayout.ModeBReverse => KeysModeBGround,
+            KeyboardLayout.ModeC => KeysModeCAir,
+            KeyboardLayout.ModeCReverse => KeysModeCGround,
+            KeyboardLayout.ModeD => KeysModeDAir,
+            _ => KeysDefaultAir
+        };
+
+    KeyCode[] GroundKeys()
+        => _keyboardLayout switch
+        {
+            KeyboardLayout.Default => KeysDefaultGround,
+            KeyboardLayout.DefaultReverse => KeysDefaultAir,
+            KeyboardLayout.ModeB => KeysModeBGround,
+            KeyboardLayout.ModeBReverse => KeysModeBAir,
+            KeyboardLayout.ModeC => KeysModeCGround,
+            KeyboardLayout.ModeCReverse => KeysModeCAir,
+            KeyboardLayout.ModeD => KeysModeDGround,
+            _ => KeysDefaultGround
+        };
+
+    static bool ContainsKey(KeyCode[] keys, KeyCode key)
+    {
+        for (var i = 0; i < keys.Length; i++)
+            if (keys[i] == key) return true;
+        return false;
+    }
+
+    static bool AnyMappedKeyHeld(KeyCode[] keys)
+    {
+        for (var i = 0; i < keys.Length; i++)
+            if (Input.GetKey(keys[i])) return true;
+        return false;
+    }
+
+    bool IsMappedPlayKey(KeyCode key)
+        => ContainsKey(AirKeys(), key) || ContainsKey(GroundKeys(), key);
+
+    bool TryMappedLane(KeyCode key, float now, out bool air)
+    {
+        air = false;
+        var inAir = ContainsKey(AirKeys(), key);
+        var inGround = ContainsKey(GroundKeys(), key);
+        if (!inAir && !inGround) return false;
+        if (_session != null && SceneTimeline.RulesFor(_session.SceneAt(now)).OneKey)
+            return true;
+        air = inAir;
+        return true;
+    }
+
+    static string JoinKeys(KeyCode[] keys)
+    {
+        var names = new string[keys.Length];
+        for (var i = 0; i < keys.Length; i++)
+            names[i] = keys[i] switch
+            {
+                KeyCode.LeftArrow => "←",
+                KeyCode.RightArrow => "→",
+                KeyCode.UpArrow => "↑",
+                KeyCode.DownArrow => "↓",
+                _ => keys[i].ToString()
+            };
+        return string.Join("/", names);
+    }
+
+    string KeyboardLayoutName()
+        => _keyboardLayout switch
+        {
+            KeyboardLayout.Default => "Default",
+            KeyboardLayout.DefaultReverse => "Default-R",
+            KeyboardLayout.ModeB => "Mode B",
+            KeyboardLayout.ModeBReverse => "Mode B-R",
+            KeyboardLayout.ModeC => "Mode C",
+            KeyboardLayout.ModeCReverse => "Mode C-R",
+            KeyboardLayout.ModeD => "Mode D",
+            _ => "Default"
+        };
+
+    string KeyboardHint()
+        => "空中 " + JoinKeys(AirKeys()) + "  地面 " + JoinKeys(GroundKeys());
+
+    void CycleKeyboardLayout()
+    {
+        var count = (int)KeyboardLayout.ModeD + 1;
+        _keyboardLayout = (KeyboardLayout)(((int)_keyboardLayout + 1) % count);
+        _playKeysHeld.Clear();
+        PlayerPrefs.SetInt(KeyboardLayoutPrefsKey, (int)_keyboardLayout);
+        PlayerPrefs.Save();
+    }
+
+    static bool ShiftHeld()
+        => Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
+
+    void ChangeAudioOffset(int deltaMs) => SetAudioOffset(_audioOffsetMs + deltaMs);
+
+    void SetAudioOffset(int milliseconds)
+    {
+        var next = AudioOffset.Snap(milliseconds);
+        if (next == _audioOffsetMs && milliseconds != 0) return;
+        _audioOffsetMs = next;
+        _inputClockFrame = -1;
+        _audioOffsetNoticeUntil = Time.unscaledTime + 1.5f;
+        PlayerPrefs.SetInt(AudioOffsetPrefsKey, _audioOffsetMs);
+        _audioOffsetDirty = true;
+        Debug.Log("音频偏移 " + AudioOffset.Format(_audioOffsetMs));
+    }
+
+    void SaveAudioOffset()
+    {
+        if (!_audioOffsetDirty) return;
+        PlayerPrefs.Save();
+        _audioOffsetDirty = false;
+    }
+
+    void PollAudioOffsetKeys()
+    {
+        if (_audioOffsetHoldKey == KeyCode.None)
+        {
+            if (Input.GetKeyDown(KeyCode.F9)) BeginAudioOffsetHold(KeyCode.F9);
+            else if (Input.GetKeyDown(KeyCode.F10)) BeginAudioOffsetHold(KeyCode.F10);
+            return;
+        }
+
+        if (!Input.GetKey(_audioOffsetHoldKey))
+        {
+            SaveAudioOffset();
+            _audioOffsetHoldKey = KeyCode.None;
+            return;
+        }
+
+        if (Time.unscaledTime < _audioOffsetNextRepeatAt) return;
+        var direction = _audioOffsetHoldKey == KeyCode.F10 ? 1 : -1;
+        ChangeAudioOffset(direction * (ShiftHeld() ? AudioOffset.FastStepMs : AudioOffset.StepMs));
+        _audioOffsetNextRepeatAt = Time.unscaledTime + AudioOffset.LongPressRepeatSec;
+    }
+
+    void BeginAudioOffsetHold(KeyCode key)
+    {
+        _audioOffsetHoldKey = key;
+        _audioOffsetNextRepeatAt = Time.unscaledTime + AudioOffset.LongPressDelaySec;
+        TryKey(key);
+    }
 
     void PressPlayKey(KeyCode key)
     {
         // 每个物理键独立锁定：J 尚未松开时 K 仍能触发下一击；来自
         // Update、IMGUI 及系统长按重复的同一次 KeyDown 只结算一次。
-        if (!IsPlayKey(key) || !_playKeysHeld.Add(key)) return;
+        if (!IsMappedPlayKey(key) || !_playKeysHeld.Add(key)) return;
         // 游玩键的去重由按下/松开状态负责，不使用“同帧同键”限制；这样
         // 极快的松开后重按以及 J-K-J 滚键不会被帧边界吞掉。
         HandleKey(key);
@@ -155,12 +352,12 @@ public sealed partial class PlayDirector
 
     void ReleasePlayKey(KeyCode key)
     {
-        if (IsPlayKey(key)) _playKeysHeld.Remove(key);
+        _playKeysHeld.Remove(key);
     }
 
     bool CaptureGuiPlayKey(UnityEngine.Event e)
     {
-        if (e == null || !IsPlayKey(e.keyCode)) return false;
+        if (e == null || !IsMappedPlayKey(e.keyCode)) return false;
         if (e.type == EventType.KeyDown)
         {
             PressPlayKey(e.keyCode);
@@ -183,7 +380,12 @@ public sealed partial class PlayDirector
     void OnApplicationFocus(bool focused)
     {
         // 切出窗口时 Unity 可能收不到 KeyUp，回来后必须解除物理键锁。
-        if (!focused) _playKeysHeld.Clear();
+        if (!focused)
+        {
+            _playKeysHeld.Clear();
+            _audioOffsetHoldKey = KeyCode.None;
+            SaveAudioOffset();
+        }
     }
 
     void TryKey(KeyCode key)
@@ -199,10 +401,11 @@ public sealed partial class PlayDirector
     {
         // 游玩键必须只读取物理按下沿。IMGUI 的 KeyDown 会随系统键盘
         // 重复率连续触发，长按 Hold 时会被误判成一串单击动作。
-        PollPlayKey(KeyCode.D);
-        PollPlayKey(KeyCode.F);
-        PollPlayKey(KeyCode.J);
-        PollPlayKey(KeyCode.K);
+        var airKeys = AirKeys();
+        var groundKeys = GroundKeys();
+        for (var i = 0; i < airKeys.Length; i++) PollPlayKey(airKeys[i]);
+        for (var i = 0; i < groundKeys.Length; i++) PollPlayKey(groundKeys[i]);
+        PollAudioOffsetKeys();
         for (var i = 1; i <= 5; i++)
         {
             if (Input.GetKeyDown(KeyCode.Alpha0 + i) || Input.GetKeyDown(KeyCode.Keypad0 + i))
@@ -221,10 +424,15 @@ public sealed partial class PlayDirector
         if (Input.GetKeyDown(KeyCode.PageDown)) TryKey(KeyCode.PageDown);
         if (Input.GetKeyDown(KeyCode.F8)) TryKey(KeyCode.F8);
         if (Input.GetKeyDown(KeyCode.PageUp)) TryKey(KeyCode.PageUp);
+        if (Input.GetKeyDown(KeyCode.F11)) TryKey(KeyCode.F11);
+        if (Input.GetKeyDown(KeyCode.F12)) TryKey(KeyCode.F12);
+        if (Input.GetKeyDown(KeyCode.Escape) && _audioOffsetPanelOpen) TryKey(KeyCode.Escape);
         if (Input.GetKeyDown(KeyCode.F5)) TryKey(KeyCode.F5);
         if (Input.GetKeyDown(KeyCode.F6)) TryKey(KeyCode.F6);
         if (Input.GetKeyDown(KeyCode.F7)) TryKey(KeyCode.F7);
         if (Input.GetKeyDown(KeyCode.R)) TryKey(KeyCode.R);
+        if (Input.GetKeyDown(KeyCode.Return)) TryKey(KeyCode.Return);
+        if (Input.GetKeyDown(KeyCode.KeypadEnter)) TryKey(KeyCode.KeypadEnter);
         if (Input.GetKeyDown(KeyCode.Space)) TryKey(KeyCode.Space);
     }
 
@@ -285,7 +493,9 @@ public sealed partial class PlayDirector
     {
         if (_songFiles.Count == 0) CollectSongs();
         if (_songFiles.Count == 0) return;
-        var i = _songIndex;
+        // 连续按上/下一首时，以已请求的目标为起点，而不是仍以
+        // 旧歌为起点，避免后台加载期间多次按键又跳回同一首。
+        var i = _songTargetIndex >= 0 ? _songTargetIndex : _songIndex;
         if (i < 0 || i >= _songFiles.Count) i = 0;
         SwitchSong(i + delta);
     }
@@ -295,34 +505,71 @@ public sealed partial class PlayDirector
         if (_songFiles.Count == 0) return;
         var n = _songFiles.Count;
         index = (index % n + n) % n;
-        PlaySong loaded;
-        try
-        {
-            loaded = PlaySong.Load(_songFiles[index]);
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogException(ex);
-            return;
-        }
+        _songTargetIndex = index;
+        var serial = ++_songSwitchSerial;
+        if (_switchSong != null)
+            StopCoroutine(_switchSong);
+        _switchSong = StartCoroutine(SwitchSongRoutine(index, serial));
+    }
 
-        _songIndex = index;
-        _song = loaded;
-        var map = s_map is >= 1 and <= 5 ? s_map : difficulty;
-        if (!_song.Document.Charts.ContainsKey(map))
-            map = _song.ResolveDifficulty(map);
+    IEnumerator SwitchSongRoutine(int index, int serial)
+    {
+        var path = _songFiles[index];
+        var requestedMap = s_map is >= 1 and <= 5 ? s_map : difficulty;
+        _waitClip = true;
+        // 若上一次的音频请求尚未完成，立即终止。否则在新谱面
+        // 后台准备期间，旧请求可能完成并突然播放错误的歌曲。
         if (_loadAudio != null)
         {
             StopCoroutine(_loadAudio);
             _loadAudio = null;
         }
+        if (_audio != null && _audio.isPlaying)
+            _audio.Pause();
+
+        // MDM 读取、JSON 解析、物件排序与各条时间轴构建都不依赖
+        // Unity API，放到工作线程后不再阻塞点击切歌的当帧。
+        var prepare = Task.Run(() =>
+        {
+            var song = PlaySong.Load(path);
+            var map = song.Document.Charts.ContainsKey(requestedMap)
+                ? requestedMap : song.ResolveDifficulty(requestedMap);
+            return new PreparedSong
+            {
+                Song = song,
+                Map = map,
+                Session = new PlaySession(song, map)
+            };
+        });
+        while (!prepare.IsCompleted)
+            yield return null;
+
+        if (serial != _songSwitchSerial)
+            yield break;
+        if (prepare.IsFaulted || prepare.IsCanceled)
+        {
+            var ex = prepare.Exception?.GetBaseException();
+            if (ex != null) Debug.LogException(ex);
+            _waitClip = false;
+            if (_audio != null && _audio.clip != null && !_paused)
+                _audio.UnPause();
+            _songTargetIndex = -1;
+            _switchSong = null;
+            yield break;
+        }
+
+        var prepared = prepare.Result;
         if (_audio != null)
         {
             _audio.Stop();
+            var oldClip = _audio.clip;
             _audio.clip = null;
+            if (oldClip != null) Destroy(oldClip);
         }
-        _waitClip = true;
-        SwitchMap(map);
+        _songIndex = index;
+        _songTargetIndex = -1;
+        _song = prepared.Song;
+        ApplySession(prepared.Session, prepared.Map);
         var music = _song.MusicPath;
         if (PlaySong.IsPlayableAudio(music))
             _loadAudio = StartCoroutine(LoadAudio(music));
@@ -331,6 +578,8 @@ public sealed partial class PlayDirector
             _waitClip = false;
             _clockOrigin = Time.time;
         }
-        Debug.Log("换歌 " + SongLabel(_songFiles[index]) + "  map" + (_session != null ? _session.Difficulty : map));
+        _switchSong = null;
+        Debug.Log("换歌 " + SongLabel(_songFiles[index]) + "  map"
+            + (_session != null ? _session.Difficulty : prepared.Map));
     }
 }
