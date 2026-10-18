@@ -381,7 +381,7 @@ if __name__ == "__main__":
             print(f"[词典] 官方配置表 {n_off} 条 + 兜底词典 {n_fd} 条 -> 生效 {len(dic)} 条")
         if cmd == "list":
             sys.exit(cmd_list(d, flag_limit, dic))
-        o = argv[2] if len(argv) > 2 else os.path.join(SCRIPT_DIR, "decoded_maps")
+        o = argv[2] if len(argv) > 2 else _paths.decoded_maps_dir()
         sys.exit(cmd_export(d, o, flag_limit, dic))
     else:
         usage(); sys.exit(0)

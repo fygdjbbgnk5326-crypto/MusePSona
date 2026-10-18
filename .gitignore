@@ -22,8 +22,6 @@ secrets.json
 
 # Decoder and player output
 /decoded_maps/
-/scripts/decoded_maps/
-/scripts/play_megalovania/
 
 # Editor-only launchers stay with the separate editor repository
 /scripts/launch_editor.py
