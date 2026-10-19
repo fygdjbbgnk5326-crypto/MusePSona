@@ -58,6 +58,16 @@ public sealed partial class PlayDirector
             return;
         }
         if (_audioOffsetPanelOpen) return;
+        if (_frontendPage == FrontendPage.SongSelect)
+        {
+            HandleSongSelectKey(key);
+            return;
+        }
+        if (_frontendPage == FrontendPage.Loading)
+        {
+            if (key == KeyCode.Escape) OpenSongSelect();
+            return;
+        }
         if (_resultOpen)
         {
             if (key is KeyCode.R or KeyCode.Return or KeyCode.KeypadEnter)
@@ -70,6 +80,24 @@ public sealed partial class PlayDirector
                 LeaveResultForSong(1);
             else if (key is KeyCode.F8 or KeyCode.PageUp)
                 LeaveResultForSong(-1);
+            else if (key == KeyCode.Escape)
+                OpenSongSelect();
+            return;
+        }
+        if (key == KeyCode.Escape)
+        {
+            SetPaused(!_paused);
+            return;
+        }
+        if (_paused)
+        {
+            if (key is KeyCode.Return or KeyCode.KeypadEnter or KeyCode.Space)
+                SetPaused(false);
+            else if (key == KeyCode.R)
+            {
+                SetPaused(false);
+                SwitchMap(_session != null ? _session.Difficulty : difficulty);
+            }
             return;
         }
         if (key == KeyCode.F1)
@@ -154,9 +182,7 @@ public sealed partial class PlayDirector
         }
         if (key == KeyCode.Space && _audio != null && _audio.clip != null)
         {
-            _paused = !_paused;
-            if (_paused) _audio.Pause();
-            else _audio.UnPause();
+            SetPaused(!_paused);
             return;
         }
         if (_session == null || _paused || autoplay) return;
@@ -426,7 +452,6 @@ public sealed partial class PlayDirector
         if (Input.GetKeyDown(KeyCode.PageUp)) TryKey(KeyCode.PageUp);
         if (Input.GetKeyDown(KeyCode.F11)) TryKey(KeyCode.F11);
         if (Input.GetKeyDown(KeyCode.F12)) TryKey(KeyCode.F12);
-        if (Input.GetKeyDown(KeyCode.Escape) && _audioOffsetPanelOpen) TryKey(KeyCode.Escape);
         if (Input.GetKeyDown(KeyCode.F5)) TryKey(KeyCode.F5);
         if (Input.GetKeyDown(KeyCode.F6)) TryKey(KeyCode.F6);
         if (Input.GetKeyDown(KeyCode.F7)) TryKey(KeyCode.F7);
@@ -434,6 +459,11 @@ public sealed partial class PlayDirector
         if (Input.GetKeyDown(KeyCode.Return)) TryKey(KeyCode.Return);
         if (Input.GetKeyDown(KeyCode.KeypadEnter)) TryKey(KeyCode.KeypadEnter);
         if (Input.GetKeyDown(KeyCode.Space)) TryKey(KeyCode.Space);
+        if (Input.GetKeyDown(KeyCode.Escape)) TryKey(KeyCode.Escape);
+        if (!IsMappedPlayKey(KeyCode.LeftArrow) && Input.GetKeyDown(KeyCode.LeftArrow)) TryKey(KeyCode.LeftArrow);
+        if (!IsMappedPlayKey(KeyCode.RightArrow) && Input.GetKeyDown(KeyCode.RightArrow)) TryKey(KeyCode.RightArrow);
+        if (!IsMappedPlayKey(KeyCode.UpArrow) && Input.GetKeyDown(KeyCode.UpArrow)) TryKey(KeyCode.UpArrow);
+        if (!IsMappedPlayKey(KeyCode.DownArrow) && Input.GetKeyDown(KeyCode.DownArrow)) TryKey(KeyCode.DownArrow);
     }
 
     void CycleMap(int delta)
@@ -505,6 +535,7 @@ public sealed partial class PlayDirector
         if (_songFiles.Count == 0) return;
         var n = _songFiles.Count;
         index = (index % n + n) % n;
+        _frontendPage = FrontendPage.Loading;
         _songTargetIndex = index;
         var serial = ++_songSwitchSerial;
         if (_switchSong != null)
@@ -550,11 +581,8 @@ public sealed partial class PlayDirector
         {
             var ex = prepare.Exception?.GetBaseException();
             if (ex != null) Debug.LogException(ex);
-            _waitClip = false;
-            if (_audio != null && _audio.clip != null && !_paused)
-                _audio.UnPause();
-            _songTargetIndex = -1;
             _switchSong = null;
+            OpenSongSelect();
             yield break;
         }
 
@@ -567,6 +595,8 @@ public sealed partial class PlayDirector
             if (oldClip != null) Destroy(oldClip);
         }
         _songIndex = index;
+        _selectedSongIndex = index;
+        _selectedDifficulty = prepared.Map;
         _songTargetIndex = -1;
         _song = prepared.Song;
         ApplySession(prepared.Session, prepared.Map);
@@ -577,6 +607,7 @@ public sealed partial class PlayDirector
         {
             _waitClip = false;
             _clockOrigin = Time.time;
+            FinishSongLoading();
         }
         _switchSong = null;
         Debug.Log("换歌 " + SongLabel(_songFiles[index]) + "  map"

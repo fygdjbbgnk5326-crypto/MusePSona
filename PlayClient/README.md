@@ -20,7 +20,16 @@ dotnet run --project MusePSona.Play.Cli -- "..\导出\<id>\<id>.mdm" 1 --auto
 1. Hub **打开** `PlayClient\Unity`（编辑器已在 `E:\Program Files\unity\2022.3.62f3c1\Editor`）。
 2. 改运行时后跑 `sync_unity_plugins.ps1`，回到 Unity 等编译。`.meta` 必须是合法 YAML。若缺 `System.Runtime.CompilerServices.Unsafe`，Play 会 FileNotFound。
 3. Player Settings → **Scripting Backend = Mono**，Api Compatibility = **.NET Standard 2.1**。
-4. 打开场景 `Assets/Scenes/Play.unity`（`PlayDirector`，**默认 autoplay**；`F1` 随时切换自动/手动，`F2` 以手动模式重开，`F3` 以自动模式重开；手动默认使用 D/F/J/K，右上 `键位` 可切官机预设）。Game 视图必须选 **Display 1**（黑屏写 Display 2 / No cameras rendering 时点 Game 窗口顶部 Display 下拉，或菜单 `MusePSona/Game 视图切到 Display 1`）。底部 map 按钮或菜单 `MusePSona/难度` 可换谱，不必重载场景。
+4. 打开场景 `Assets/Scenes/Play.unity`（`PlayDirector`）。启动后先进入官机式选曲页：横向切歌、中央曲绘、曲名/作者/BPM 与难度星级；`←/→` 选曲、`↑/↓` 选难度、`Enter` 开始。游玩中 `Esc` 打开暂停页，可继续、重试或返回选曲；曲终依次进入 Full Combo 演出和结算页，支持返回选曲、重试、下一首。默认仍为 autoplay；`F1` 随时切换自动/手动，`F2` 以手动模式重开，`F3` 以自动模式重开；手动默认使用 D/F/J/K，右上 `键位` 可切官机预设。Game 视图必须选 **Display 1**（黑屏写 Display 2 / No cameras rendering 时点 Game 窗口顶部 Display 下拉，或菜单 `MusePSona/Game 视图切到 Display 1`）。
+
+### 页面流转与选曲
+
+- 页面顺序：`选曲 → 加载 → 游玩 → Full Combo（符合条件时）→ 结算`。
+- 选曲页采用中央唱片曲绘、左右候选唱片、顶部功能栏与底部难度卡布局；可用方向键、鼠标滚轮、两侧唱片或箭头切歌。它直接读取每个 MDM 内的 `info.json`、`cover.png/jpg/jpeg` 和 `map1–map5`，不会为了显示列表而解包整首歌；高亮曲目存在 `demo.ogg/mp3` 时会延迟约 0.32 秒开始循环试听，快速翻页不会连续解码。
+- 运行 `py -3.14 scripts/extract_md_song_select.py` 可从本机官机选曲、导航与通用封面包提取唱片、光芒、页签、返回/设置按钮、切歌箭头和难度徽章；输出在已忽略的 `MdLooks/sprites/common/`，不会提交或分发官机素材。未提取时会自动使用程序化回退外观。
+- 最近选择的曲目与难度会写入 `PlayerPrefs`；该难度在另一首歌不存在时，按可用难度自动回退。
+- 加载页按 `Esc` 可取消并返回选曲；切歌失败会显示日志并自动退回选曲。
+- 调试快捷键仍保留：`F4/F8` 下一首/上一首，数字键或 `[]` 切难度，`F12` 打开延迟校准。
 
 ### 音频偏移测试
 

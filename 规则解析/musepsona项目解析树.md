@@ -24,6 +24,7 @@ MusePSona/
 │   ├── csv_mmg_convert.py        # 兜底：已导出 CSV → MDM；BMS 写出被官方管线引用
 │   ├── chart_project.py          # 自制谱工程：新建 / 预检 / 打包到 导出
 │   ├── extract_md_sprites.py     # 可选：gamescene_01–12/common → sprites/scene_XX/ 静图主体
+│   ├── extract_md_song_select.py # 可选：pnlstage → common 官机选曲页静态物件
 │   ├── extract_md_scene_bg.py    # 可选：scene_XX 预制 Bg/Near/Mid/Far → sprites/scene_XX/bg/（scene_01～03、07、08 见词典 §1.3e）
 │   ├── extract_md_spine.py       # 可选：F8 .skel+.atlas+png → StreamingAssets/MdLooks/spine（gitignore）
 │   ├── samples/mopemope_map1.csv # 31 列官谱 CSV 样例（csv2mdm 兜底用）
@@ -57,7 +58,7 @@ MusePSona/
 │       ├── MdSceneBg.cs           # 分层背景
 │       └── MdLooks.cs             # 静图 / 判定圈贴图键
 │   └── Unity/Assets/StreamingAssets/MdLooks/ # 本机游戏素材（.gitignore，不提交/分发）
-│       ├── sprites/               # extract_md_sprites.py --all：scene_XX 静图 + manifest.json
+│       ├── sprites/               # scene_XX 对局静图；common 含 HUD/选曲页物件 + manifest.json
 │       └── spine/                 # extract_md_spine.py：.skel + atlas + png + index.json
 ```
 
@@ -339,6 +340,8 @@ python scripts/map_decoder.py export <bundle目录> <输出目录>
 
 
 游戏素材（可选）：`python scripts/extract_md_sprites.py [--scene 01 | --all]` 只读本机 `gamescene_XX_assets_all_*` 与 `gamescene_common_assets_all_*`，按 Spine atlas 裁出各物件主体部件，并从图集裁 `HitPointOut/In/InCatch`（禁止整页 atlas），另从 `gamemain` 抽 `ScorePerfect/Great/Pass` 与 Gold 字，直接写到 `PlayClient/Unity/Assets/StreamingAssets/MdLooks/sprites/scene_XX/` 与 `sprites/common/`。`extract_md_scene_bg.py` 另抽对局分层背景到 `sprites/scene_XX/bg/`（layout.json + png，gitignore；scene_01～03、07、08 规则见词典 §1.3e）。只取主体部件，不是完整骨骼姿态。`--all` 覆盖 01–12。atlas 部件名因场景而异（`body`/`body1`/`wooden`、`images_air`/`image_air`），抽取时按前缀回退。**atlas 的 `xy.y` 是页内从上往下**（libGDX）；PNG 若 pad 成 POT，多出来的行在上方，裁切 `y = (pngH - atlasH) + atlasY`，rotate 时先按页内交换宽高。不要用 `pngH - atlasY - h`（左下原点）——摆锤会裁成图集碎块。`wooden` 是侧视木质悠悠球，不是角色脸。`scene_07` 无 wooden。愚人 `gamescene_11` 是 1K 专用（`1110/1111/1112_road` = `40/41/42`），不要抽成双轨标准包。`_cy`/`_fool`/`dave`/`touhou_black` 不是标准 xNN 物件包，不抽。摆锤静图重裁：`python scripts/recrop_pendulum.py`。
+
+选曲页官机物件（可选）：`py -3.14 scripts/extract_md_song_select.py` 只读本机选曲、导航与通用封面 bundle，导出 `disc`、`RayFx`、`PackInfoBase`、`DifficultyButton`、难度图标、页签和切歌箭头到 `MdLooks/sprites/common/ui_*.png`，并合并 `manifest.json`。`ring_big` 属于播放/收藏按钮，不能叠到唱片上；游玩端优先加载这些本机物件，缺失时使用程序化回退，不依赖官机素材也能运行。
 
 物件外观（矢量）：空中青蓝 / 地面粉紫（向 scene_01 配色靠拢），普通怪带高光和朝左的眼睛、按 ibms 分大小（01-03 小、04-09 中、0A/0B 大）；Boss = 紫色大炸弹；判定圈 = 四段白环 + 中心小圈；长按 = 粗胶囊条 + 两端星形；齿轮 = 白色尖齿锯片 + 紫色轮毂；红心带高光、音符为 ♫。幽灵 = 半透明填充 + 虚线圈；摆锤 = 白边圆 + 连到吊点的吊线（吊点在上 0D、在下 0J 倒置）；突击者 = 白边箭头 + 右侧拖尾（拖尾朝上 0C、朝下 0I 倒置），两者沿用轨道色；连打 = 红色白边同心圆；飞近档 2 / 3 的物件左上角常驻 2 / 3 道黄 / 红箭头（与进度条档位标记同色）。图例写在「显示 ID」的悬停提示里。
 

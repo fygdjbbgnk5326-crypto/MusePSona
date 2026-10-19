@@ -16,6 +16,7 @@ public sealed partial class PlayDirector : MonoBehaviour
     const string AudioOffsetPrefsKey = "MusePSona.AudioOffsetMs";
     const string AdvancedJudgePrefsKey = "MusePSona.ShowAdvancedJudge";
     const string KeyboardLayoutPrefsKey = "MusePSona.KeyboardLayout";
+    const string SelectedCharacterPrefsKey = "MusePSona.SelectedCharacter";
 
     enum KeyboardLayout
     {
@@ -201,6 +202,8 @@ public sealed partial class PlayDirector : MonoBehaviour
     {
         CloseAudioOffsetPanel(false);
         SaveAudioOffset();
+        StopSongPreview();
+        DropSongCatalog();
         DropGirl();
         if (Live == this) Live = null;
     }
@@ -222,49 +225,17 @@ public sealed partial class PlayDirector : MonoBehaviour
         if (s_map is >= 1 and <= 5) difficulty = s_map;
         SetupStage();
         CollectSongs();
+        BuildSongCatalog();
+        MdLooks.Reload();
         MdSpine.Ensure();
         CollectChars();
         if (TempCharSwitch) EnsureGirl();
         var path = Path.Combine(Application.streamingAssetsPath, chartFile);
-        var listed = _songFiles.FindIndex(p => string.Equals(p, path, System.StringComparison.OrdinalIgnoreCase));
-        if (listed >= 0) _songIndex = listed;
-        if (!File.Exists(path))
-        {
-            Debug.LogError("找不到谱面: " + path + "  （放到 Assets/StreamingAssets/Charts/ 或菜单 MusePSona/从导出复制最新 MDM）");
-            return;
-        }
-
-        try
-        {
-            _song = PlaySong.Load(path);
-            if (s_map is < 1 or > 5 || !_song.Document.Charts.ContainsKey(s_map))
-                s_map = _song.ResolveDifficulty(difficulty);
-            difficulty = s_map;
-            _session = new PlaySession(_song, difficulty);
-            ResetScreenFxState();
-            if (_bg != null) _bg.ScrollY = 0f;
-            if (_session.Difficulty != difficulty)
-                Debug.Log("没有 map" + difficulty + "，改用 map" + _session.Difficulty);
-            MdLooks.Reload();
-            MdSpine.Ensure();
-            RebuildJudges();
-            if (TempCharSwitch) EnsureGirl();
-            var need = SceneTimeline.Needed(_session.Scenes);
-            Debug.Log("MDM 场景 " + string.Join(" → ", need));
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogException(ex);
-            return;
-        }
         _audio = gameObject.AddComponent<AudioSource>();
-        _clockOrigin = Time.time;
-        var music = _song != null ? _song.MusicPath : _session.Song.MusicPath;
-        if (PlaySong.IsPlayableAudio(music))
-        {
-            _waitClip = true;
-            _loadAudio = StartCoroutine(LoadAudio(music));
-        }
+        SetupSongPreview();
+        InitializeSongSelection(path);
+        _frontendPage = FrontendPage.SongSelect;
+        _paused = false;
     }
 
     System.Collections.IEnumerator LoadAudio(string path)
@@ -274,6 +245,7 @@ public sealed partial class PlayDirector : MonoBehaviour
             Debug.LogWarning("跳过无效音频（占位/空文件）: " + path);
             _waitClip = false;
             _clockOrigin = Time.time;
+            FinishSongLoading();
             yield break;
         }
         var type = ClipType(path);
@@ -282,6 +254,7 @@ public sealed partial class PlayDirector : MonoBehaviour
             Debug.LogWarning("不支持的音频格式: " + path);
             _waitClip = false;
             _clockOrigin = Time.time;
+            FinishSongLoading();
             yield break;
         }
         var uri = new System.Uri(path).AbsoluteUri;
@@ -296,6 +269,7 @@ public sealed partial class PlayDirector : MonoBehaviour
             Debug.LogWarning("音频加载失败: " + req.error + "  " + path);
             _waitClip = false;
             _clockOrigin = Time.time;
+            FinishSongLoading();
             yield break;
         }
         try
@@ -307,10 +281,12 @@ public sealed partial class PlayDirector : MonoBehaviour
             Debug.LogWarning("音频解码失败: " + path + "  " + ex.Message);
             _waitClip = false;
             _clockOrigin = Time.time;
+            FinishSongLoading();
             yield break;
         }
         _waitClip = false;
         if (!_paused) _audio.Play();
+        FinishSongLoading();
     }
 
     static AudioType ClipType(string path)
@@ -457,7 +433,7 @@ public sealed partial class PlayDirector : MonoBehaviour
     void Update()
     {
         PollPlayKeys();
-        if (_session == null) return;
+        if (_frontendPage != FrontendPage.Playing || _session == null) return;
         var now = Clock();
         var scene = _session.SceneAt(now);
         if (_forceScene.Length > 0) scene = _forceScene;

@@ -113,14 +113,26 @@ public sealed partial class PlayDirector
             }
         }
         _chars.Sort((a, b) => string.CompareOrdinal(a.Key, b.Key));
-        if (_charIndex >= _chars.Count) _charIndex = 0;
+        var saved = PlayerPrefs.GetString(SelectedCharacterPrefsKey, "");
+        var savedIndex = _chars.FindIndex(character => string.Equals(
+            character.Key, saved, System.StringComparison.OrdinalIgnoreCase));
+        if (savedIndex >= 0) _charIndex = savedIndex;
+        else if (_charIndex >= _chars.Count) _charIndex = 0;
     }
 
     void CycleChar(int delta)
     {
         if (_chars.Count == 0) return;
-        _charIndex = (_charIndex + delta) % _chars.Count;
+        SelectChar((_charIndex + delta) % _chars.Count);
+    }
+
+    void SelectChar(int index)
+    {
+        if (_chars.Count == 0) return;
+        _charIndex = index % _chars.Count;
         if (_charIndex < 0) _charIndex += _chars.Count;
+        PlayerPrefs.SetString(SelectedCharacterPrefsKey, _chars[_charIndex].Key);
+        PlayerPrefs.Save();
         EnsureGirl(force: true);
     }
 
@@ -471,10 +483,7 @@ public sealed partial class PlayDirector
             var on = i == _charIndex;
             GUI.backgroundColor = on ? new Color(1f, 0.85f, 0.2f) : new Color(0.75f, 0.78f, 0.85f);
             if (GuiClick(new Rect(x, y, w, h), _chars[i].Label))
-            {
-                _charIndex = i;
-                EnsureGirl(force: true);
-            }
+                SelectChar(i);
             x += w + gap;
         }
         GUI.backgroundColor = prev;

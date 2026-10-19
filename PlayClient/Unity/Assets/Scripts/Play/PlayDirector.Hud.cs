@@ -33,6 +33,16 @@ public sealed partial class PlayDirector
             DrawAudioOffsetPanel();
             return;
         }
+        if (_frontendPage == FrontendPage.SongSelect)
+        {
+            DrawSongSelect();
+            return;
+        }
+        if (_frontendPage == FrontendPage.Loading)
+        {
+            DrawLoadingPage();
+            return;
+        }
         if (_session == null)
         {
             GUI.Label(new Rect(12, 12, 720, 40), "无谱面  Assets/StreamingAssets/" + chartFile, _hudStyle);
@@ -82,6 +92,7 @@ public sealed partial class PlayDirector
         const float comboH = 62f;
         if (_session.Combo > 0 && _comboSpine == null && _comboNumRoot == null)
             GUI.Label(new Rect((Screen.width - 360f) * 0.5f, comboY, 360f, comboH), _hudComboText, _comboStyle);
+        if (_paused) DrawPausePanel();
     }
 
     static float HudReferenceScale()

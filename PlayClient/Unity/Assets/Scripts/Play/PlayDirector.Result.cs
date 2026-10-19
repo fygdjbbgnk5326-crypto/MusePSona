@@ -473,8 +473,8 @@ public sealed partial class PlayDirector
         var buttonsX = x + (w - buttonW * 3f - gap * 2f) * 0.5f;
         var buttonsY = y + h - 70f;
         GUI.backgroundColor = new Color(0.55f, 0.62f, 0.95f);
-        if (GuiClick(new Rect(buttonsX, buttonsY, buttonW, buttonH), "上一首  F8"))
-            LeaveResultForSong(-1);
+        if (GuiClick(new Rect(buttonsX, buttonsY, buttonW, buttonH), "返回选曲  Esc"))
+            OpenSongSelect();
         GUI.backgroundColor = new Color(1f, 0.38f, 0.72f);
         if (GuiClick(new Rect(buttonsX + buttonW + gap, buttonsY, buttonW, buttonH), "重试  R"))
             RestartFromResult();
