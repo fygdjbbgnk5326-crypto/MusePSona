@@ -561,24 +561,26 @@ public sealed partial class PlayDirector
 
     void DrawBackdropAmbientFacets(float time, float rootDegrees, Color ambient)
     {
-        // F8 橙色阶段可见大块连续色面。用缓慢外移的多边形层补足平滑底色，
-        // 它位于立方体粒子后面，不参与两组 Cube 的数量与遮挡。
+        // F8 橙色阶段的底色被大量深浅不同的棱面切开，而不是一片平滑光晕。
+        // 棱面位于立方体粒子后面，不参与两组 Cube 的数量与遮挡。
         var center = new Vector2(SongSelectDesignWidth * 0.5f, SongSelectDesignHeight * 0.5f);
-        for (var i = 0; i < 18; i++)
+        const int facetCount = 30;
+        for (var i = 0; i < facetCount; i++)
         {
-            var age = Mathf.Repeat(time / 13f + i / 18f, 1f);
+            var age = Mathf.Repeat(time / 15f + i / (float)facetCount, 1f);
             var theta = BackdropHash(i * 53 + 701) * Mathf.PI * 2f
                 + rootDegrees * Mathf.Deg2Rad;
-            var distance = Mathf.Lerp(100f, 960f, age * age);
+            var distance = Mathf.Lerp(80f, 1130f, age * age);
             var x = center.x + Mathf.Cos(theta) * distance;
             var y = center.y + Mathf.Sin(theta) * distance * 0.62f;
-            var size = Mathf.Lerp(400f, 1050f, age)
+            var size = Mathf.Lerp(470f, 1200f, age)
                 * Mathf.Lerp(0.75f, 1.25f, BackdropHash(i * 41 + 29));
             var fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / 0.12f))
                 * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((1f - age) / 0.16f));
+            var shade = BackdropHash(i * 37 + 19);
             var color = Color.Lerp(ambient, new Color(0.44f, 0.01f, 0.38f),
-                BackdropHash(i * 37 + 19) * 0.72f);
-            color.a = fade * 0.38f;
+                Mathf.Lerp(0.12f, 0.92f, shade));
+            color.a = fade * Mathf.Lerp(0.57f, 0.82f, shade);
             DrawRotatedTexture(new Rect(x - size * 0.5f, y - size * 0.32f,
                 size, size * 0.64f), SongBackdropFacetTexture(), color,
                 theta * Mathf.Rad2Deg + BackdropHash(i * 71 + 47) * 55f);
@@ -653,8 +655,8 @@ public sealed partial class PlayDirector
         // F9 两组方块共用紫色材质；近景大块仍保留遮挡，不做透明淡出。
         var nearBlend = Mathf.SmoothStep(0f, 1f,
             Mathf.InverseLerp(0.25f, 0.65f, depth));
-        return Color.Lerp(new Color(0.39f, 0f, 0.55f),
-            new Color(0.25f, 0f, 0.40f), nearBlend);
+        return Color.Lerp(new Color(0.60f, 0.025f, 0.46f),
+            new Color(0.32f, 0f, 0.39f), nearBlend);
     }
 
     static void DrawBackdropLineParticles(float time, float rootDegrees)
