@@ -1599,4 +1599,3 @@ public sealed partial class PlayDirector
         _selectTabStyle.normal.textColor = new Color(0.401f, 0.150f, 0.755f, 1f);
     }
 }
-
