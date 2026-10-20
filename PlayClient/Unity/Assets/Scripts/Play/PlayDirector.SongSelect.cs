@@ -505,9 +505,9 @@ public sealed partial class PlayDirector
     void DrawSongSelectBackdrop(float scale)
     {
         // 官机 BgAlbum1 不是 RayFx 放射贴图，而是两层立方体粒子和一层短线粒子。
-        // 两次官机布局抓取相隔 20.434s，根节点从 -1.8504° 转到 -17.8236°：约 -0.782°/s。
+        // BgAlbum1 静态配置 staticRotateSpeed=2；两次逐帧采集实测约 -2.01°/s。
         var t = Mathf.Max(0f, Time.unscaledTime - _songBackdropStartedAt);
-        var rootDegrees = -0.782f * t;
+        var rootDegrees = -2f * t;
         DrawSolid(new Rect(0f, 0f, SongSelectDesignWidth, SongSelectDesignHeight),
             new Color(0.075f, 0.018f, 0.15f));
         DrawSolid(new Rect(0f, 70f, SongSelectDesignWidth, SongSelectDesignHeight - 100f),
