@@ -74,6 +74,7 @@ public sealed partial class PlayDirector
     Texture2D _songGearTexture;
     Texture2D _songBackdropCubeTexture;
     Texture2D _songBackdropGlowTexture;
+    Texture2D _songBackdropFacetTexture;
     float _songBackdropStartedAt;
     AudioSource _previewAudio;
     Coroutine _previewLoad;
@@ -273,6 +274,11 @@ public sealed partial class PlayDirector
         {
             Destroy(_songBackdropGlowTexture);
             _songBackdropGlowTexture = null;
+        }
+        if (_songBackdropFacetTexture != null)
+        {
+            Destroy(_songBackdropFacetTexture);
+            _songBackdropFacetTexture = null;
         }
     }
 
@@ -523,11 +529,12 @@ public sealed partial class PlayDirector
         // F8 官机画面中，中央底色从紫红经过橙色转为绿色，边缘仍保持暗紫。
         // 用宽径向亮区表现该变化；没有逐帧材质颜色记录，时序按截图近似。
         var before = GUI.color;
-        GUI.color = new Color(ambient.r, ambient.g, ambient.b, 0.88f);
+        GUI.color = new Color(ambient.r, ambient.g, ambient.b, 1f);
         GUI.DrawTexture(new Rect(-100f, 70f, SongSelectDesignWidth + 200f,
             SongSelectDesignHeight - 170f), SongBackdropGlowTexture(), ScaleMode.StretchToFill, true);
         GUI.color = before;
 
+        DrawBackdropAmbientFacets(t, rootDegrees, ambient);
         DrawBackdropParticleField(t, rootDegrees);
         DrawBackdropLineParticles(t, rootDegrees);
 
@@ -540,7 +547,7 @@ public sealed partial class PlayDirector
         // 从 10 秒官机采集中的紫红、橙、绿区间取色，并平滑循环。
         var phase = Mathf.Repeat(time, 13f);
         var pink = new Color(0.96f, 0.02f, 0.48f);
-        var orange = new Color(1f, 0.43f, 0.08f);
+        var orange = new Color(1f, 0.52f, 0.08f);
         var green = new Color(0.22f, 0.70f, 0.06f);
         if (phase < 2.6f) return pink;
         if (phase < 4.4f)
@@ -550,6 +557,32 @@ public sealed partial class PlayDirector
             return Color.Lerp(orange, green, Mathf.SmoothStep(0f, 1f, (phase - 8f) / 1.8f));
         if (phase < 10.7f) return green;
         return Color.Lerp(green, pink, Mathf.SmoothStep(0f, 1f, (phase - 10.7f) / 2.3f));
+    }
+
+    void DrawBackdropAmbientFacets(float time, float rootDegrees, Color ambient)
+    {
+        // F8 橙色阶段可见大块连续色面。用缓慢外移的多边形层补足平滑底色，
+        // 它位于立方体粒子后面，不参与两组 Cube 的数量与遮挡。
+        var center = new Vector2(SongSelectDesignWidth * 0.5f, SongSelectDesignHeight * 0.5f);
+        for (var i = 0; i < 18; i++)
+        {
+            var age = Mathf.Repeat(time / 13f + i / 18f, 1f);
+            var theta = BackdropHash(i * 53 + 701) * Mathf.PI * 2f
+                + rootDegrees * Mathf.Deg2Rad;
+            var distance = Mathf.Lerp(100f, 960f, age * age);
+            var x = center.x + Mathf.Cos(theta) * distance;
+            var y = center.y + Mathf.Sin(theta) * distance * 0.62f;
+            var size = Mathf.Lerp(400f, 1050f, age)
+                * Mathf.Lerp(0.75f, 1.25f, BackdropHash(i * 41 + 29));
+            var fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / 0.12f))
+                * Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((1f - age) / 0.16f));
+            var color = Color.Lerp(ambient, new Color(0.44f, 0.01f, 0.38f),
+                BackdropHash(i * 37 + 19) * 0.72f);
+            color.a = fade * 0.38f;
+            DrawRotatedTexture(new Rect(x - size * 0.5f, y - size * 0.32f,
+                size, size * 0.64f), SongBackdropFacetTexture(), color,
+                theta * Mathf.Rad2Deg + BackdropHash(i * 71 + 47) * 55f);
+        }
     }
 
     void DrawBackdropParticleField(float time, float rootDegrees)
@@ -588,16 +621,17 @@ public sealed partial class PlayDirector
             var theta = BackdropHash(i * 29 + seed + 11) * Mathf.PI * 2f + rootAngle;
             // ShapeModule 的半径分别为 3.3 和 1.2，Radius Thickness = 0。
             var emitterRatio = small ? 1.2f / 3.3f : 1f;
-            var radius = 500f * emitterRatio * perspective;
-            var x = center.x + Mathf.Cos(theta) * radius;
-            var y = center.y + Mathf.Sin(theta) * radius;
+            // 实机截图中，投影后的圆周在纵向被压进背景可视区域；
+            // 上一版使用 500×500，让过多方块在上下边缘提前离屏。
+            var x = center.x + Mathf.Cos(theta) * 450f * emitterRatio * perspective;
+            var y = center.y + Mathf.Sin(theta) * 320f * emitterRatio * perspective;
 
             // 官机 startSize：ParCubeS=0.10–0.42，大 Cube=1–3。
             // 两者用同一 Mesh，尺寸差来自粒子大小，不应把小 Cube 拉成竖线。
             var sourceSize = small
                 ? Mathf.Lerp(0.10f, 0.42f, BackdropHash(i * 71 + seed + 31))
                 : Mathf.Lerp(1f, 3f, BackdropHash(i * 71 + seed + 31));
-            var height = sourceSize * 110f;
+            var height = sourceSize * (small ? 125f : 90f);
             var width = height * Mathf.Lerp(0.88f, 1.42f, BackdropHash(i * 61 + seed + 23));
             width *= perspective;
             height *= perspective;
@@ -619,8 +653,8 @@ public sealed partial class PlayDirector
         // F9 两组方块共用紫色材质；近景大块仍保留遮挡，不做透明淡出。
         var nearBlend = Mathf.SmoothStep(0f, 1f,
             Mathf.InverseLerp(0.25f, 0.65f, depth));
-        return Color.Lerp(new Color(0.38f, 0f, 0.73f),
-            new Color(0.24f, 0f, 0.48f), nearBlend);
+        return Color.Lerp(new Color(0.39f, 0f, 0.55f),
+            new Color(0.25f, 0f, 0.40f), nearBlend);
     }
 
     static void DrawBackdropLineParticles(float time, float rootDegrees)
@@ -1020,6 +1054,28 @@ public sealed partial class PlayDirector
         _songBackdropGlowTexture.SetPixels32(pixels);
         _songBackdropGlowTexture.Apply(false, true);
         return _songBackdropGlowTexture;
+    }
+
+    Texture2D SongBackdropFacetTexture()
+    {
+        if (_songBackdropFacetTexture != null) return _songBackdropFacetTexture;
+        const int size = 128;
+        _songBackdropFacetTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "song-select-backdrop-facet",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear
+        };
+        var pixels = new Color32[size * size];
+        FillBackdropPolygon(pixels, size, new[]
+        {
+            new Vector2(0f, 20f), new Vector2(97f, 0f),
+            new Vector2(127f, 35f), new Vector2(110f, 127f),
+            new Vector2(23f, 119f)
+        }, new Color32(255, 255, 255, 255));
+        _songBackdropFacetTexture.SetPixels32(pixels);
+        _songBackdropFacetTexture.Apply(false, true);
+        return _songBackdropFacetTexture;
     }
 
     Texture2D SongBackdropCubeTexture()
