@@ -73,6 +73,7 @@ public sealed partial class PlayDirector
     Texture2D _songDiscTexture;
     Texture2D _songGearTexture;
     Texture2D _songBackdropCubeTexture;
+    Texture2D _songBackdropGlowTexture;
     float _songBackdropStartedAt;
     AudioSource _previewAudio;
     Coroutine _previewLoad;
@@ -267,6 +268,11 @@ public sealed partial class PlayDirector
         {
             Destroy(_songBackdropCubeTexture);
             _songBackdropCubeTexture = null;
+        }
+        if (_songBackdropGlowTexture != null)
+        {
+            Destroy(_songBackdropGlowTexture);
+            _songBackdropGlowTexture = null;
         }
     }
 
@@ -508,10 +514,19 @@ public sealed partial class PlayDirector
         // BgAlbum1 静态配置 staticRotateSpeed=2；两次逐帧采集实测约 -2.01°/s。
         var t = Mathf.Max(0f, Time.unscaledTime - _songBackdropStartedAt);
         var rootDegrees = -2f * t;
+        var ambient = BackdropAmbientColor(t);
         DrawSolid(new Rect(0f, 0f, SongSelectDesignWidth, SongSelectDesignHeight),
             new Color(0.075f, 0.018f, 0.15f));
         DrawSolid(new Rect(0f, 70f, SongSelectDesignWidth, SongSelectDesignHeight - 100f),
-            new Color(0.26f, 0f, 0.44f));
+            Color.Lerp(new Color(0.26f, 0f, 0.44f), ambient, 0.22f));
+
+        // F8 官机画面中，中央底色从紫红经过橙色转为绿色，边缘仍保持暗紫。
+        // 用宽径向亮区表现该变化；没有逐帧材质颜色记录，时序按截图近似。
+        var before = GUI.color;
+        GUI.color = new Color(ambient.r, ambient.g, ambient.b, 0.88f);
+        GUI.DrawTexture(new Rect(-100f, 70f, SongSelectDesignWidth + 200f,
+            SongSelectDesignHeight - 170f), SongBackdropGlowTexture(), ScaleMode.StretchToFill, true);
+        GUI.color = before;
 
         DrawBackdropParticleField(t, rootDegrees, false);
         DrawBackdropParticleField(t, rootDegrees, true);
@@ -519,6 +534,23 @@ public sealed partial class PlayDirector
 
         DrawSolid(new Rect(0f, SongSelectDesignHeight - 100f, SongSelectDesignWidth, 100f),
             new Color(0.10f, 0.055f, 0.25f, 0.96f));
+    }
+
+    static Color BackdropAmbientColor(float time)
+    {
+        // 从 10 秒官机采集中的紫红、橙、绿区间取色，并平滑循环。
+        var phase = Mathf.Repeat(time, 13f);
+        var pink = new Color(0.96f, 0.02f, 0.48f);
+        var orange = new Color(1f, 0.43f, 0.08f);
+        var green = new Color(0.22f, 0.70f, 0.06f);
+        if (phase < 2.6f) return pink;
+        if (phase < 4.4f)
+            return Color.Lerp(pink, orange, Mathf.SmoothStep(0f, 1f, (phase - 2.6f) / 1.8f));
+        if (phase < 8f) return orange;
+        if (phase < 9.8f)
+            return Color.Lerp(orange, green, Mathf.SmoothStep(0f, 1f, (phase - 8f) / 1.8f));
+        if (phase < 10.7f) return green;
+        return Color.Lerp(green, pink, Mathf.SmoothStep(0f, 1f, (phase - 10.7f) / 2.3f));
     }
 
     void DrawBackdropParticleField(float time, float rootDegrees, bool foreground)
@@ -600,46 +632,37 @@ public sealed partial class PlayDirector
 
     static Color BackdropParticleColor(float alpha, float depth)
     {
-        // 大小粒子共用 ParCubeL，不能为每块随机指定不同的玫红色。
-        // 2D 近似渲染仍用深度调色模拟官机的远处暗紫和近处亮面。
+        // F9 两组方块共用的 ParCubeL 材质为紫色；明亮色块来自底层背景变化。
         var nearBlend = Mathf.SmoothStep(0f, 1f,
             Mathf.InverseLerp(0.55f, 0.95f, depth));
-        var color = Color.Lerp(new Color(0.23f, 0f, 0.40f),
-            new Color(1f, 0f, 0.4549f), nearBlend);
-        color.a = alpha * 0.80f;
+        var color = Color.Lerp(new Color(0.20f, 0f, 0.35f),
+            new Color(0.498f, 0f, 1f), nearBlend);
+        color.a = alpha * Mathf.Lerp(0.88f, 0.96f, nearBlend);
         return color;
     }
 
     static void DrawBackdropLineParticles(float time, float rootDegrees)
     {
         var center = new Vector2(SongSelectDesignWidth * 0.5f, SongSelectDesignHeight * 0.5f);
-        // 官机 ParLine 为 10/s × 0.4s，ParRay 为 15/s × 2.5s。
-        for (var i = 0; i < 42; i++)
+        // F9 抓取时 ParLine 未播放且粒子数为 0；常驻短线只模拟 38 个 ParRay。
+        // ParRay 为 15/s × 2.5s，Start Size 最多 0.025，Stretch lengthScale=20。
+        for (var i = 0; i < 38; i++)
         {
-            var quick = i < 4;
-            var localIndex = quick ? i : i - 4;
-            var lifetime = quick ? 0.4f : 2.5f;
-            var age = Mathf.Repeat(time / lifetime + BackdropHash(localIndex * 37 + 5), 1f);
-            var fade = quick ? Mathf.Sin(Mathf.PI * age) : 1f - age;
-            var theta = localIndex * 2.3999632f + BackdropHash(localIndex * 73 + 17) * 0.8f
+            var age = Mathf.Repeat(time / 2.5f + BackdropHash(i * 37 + 5), 1f);
+            var fade = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / 0.08f)) * (1f - age);
+            var theta = i * 2.3999632f + BackdropHash(i * 73 + 17) * 0.8f
                 + rootDegrees * Mathf.Deg2Rad;
-            // ParLine 没有速度或旋转模块，只在 0.4 秒内按 0→1→0 缩放；
-            // ParRay 才沿本地 Z 轴以 3–5 单位/秒接近镜头并旋转。
-            var birthRadius = (quick ? 280f : 420f)
-                * Mathf.Lerp(0.85f, 1.15f, BackdropHash(localIndex * 83 + (quick ? 29 : 61)));
-            var radius = quick ? birthRadius : birthRadius * Mathf.Lerp(0.72f, 1.85f, age * age);
+            var birthRadius = 420f * Mathf.Lerp(0.85f, 1.15f, BackdropHash(i * 83 + 61));
+            var radius = birthRadius * Mathf.Lerp(0.72f, 1.85f, age * age);
             var position = center + new Vector2(Mathf.Cos(theta) * radius,
                 Mathf.Sin(theta) * radius * 0.52f);
-            var length = Mathf.Lerp(quick ? 180f : 115f, quick ? 520f : 390f,
-                BackdropHash(localIndex * 103 + 43))
-                * (quick ? fade : Mathf.Lerp(0.48f, 1.35f, age));
-            var thickness = quick ? 9f * fade : 4f;
-            var color = quick
-                ? new Color(0f, 0.90f, 0.83f, fade * 0.48f)
-                : new Color(0.852f, 0.588f, 1f, fade * 0.20f);
+            var length = Mathf.Lerp(18f, 105f, BackdropHash(i * 103 + 43))
+                * Mathf.Lerp(0.65f, 1.55f, age);
+            var thickness = Mathf.Lerp(1f, 3f, BackdropHash(i * 67 + 19));
+            var color = new Color(0.852f, 0.588f, 1f, fade * 0.25f);
             DrawRotatedSolid(new Rect(position.x - length * 0.5f,
                 position.y - thickness * 0.5f, length, thickness), color,
-                theta * Mathf.Rad2Deg + (quick ? 0f : age * lifetime * 30f));
+                theta * Mathf.Rad2Deg + age * 75f);
         }
     }
 
@@ -989,6 +1012,32 @@ public sealed partial class PlayDirector
         _songGearTexture.SetPixels32(pixels);
         _songGearTexture.Apply(false, true);
         return _songGearTexture;
+    }
+
+    Texture2D SongBackdropGlowTexture()
+    {
+        if (_songBackdropGlowTexture != null) return _songBackdropGlowTexture;
+        const int size = 128;
+        _songBackdropGlowTexture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "song-select-backdrop-glow",
+            wrapMode = TextureWrapMode.Clamp,
+            filterMode = FilterMode.Bilinear
+        };
+        var pixels = new Color32[size * size];
+        for (var y = 0; y < size; y++)
+        for (var x = 0; x < size; x++)
+        {
+            var dx = (x + 0.5f - size * 0.5f) / (size * 0.5f);
+            var dy = (y + 0.5f - size * 0.5f) / (size * 0.5f);
+            var distance = Mathf.Sqrt(dx * dx + dy * dy);
+            var alpha = Mathf.Pow(Mathf.Clamp01(1f - distance), 0.65f);
+            pixels[y * size + x] = new Color32(255, 255, 255,
+                (byte)Mathf.RoundToInt(alpha * 255f));
+        }
+        _songBackdropGlowTexture.SetPixels32(pixels);
+        _songBackdropGlowTexture.Apply(false, true);
+        return _songBackdropGlowTexture;
     }
 
     Texture2D SongBackdropCubeTexture()
@@ -1550,3 +1599,4 @@ public sealed partial class PlayDirector
         _selectTabStyle.normal.textColor = new Color(0.401f, 0.150f, 0.755f, 1f);
     }
 }
+
