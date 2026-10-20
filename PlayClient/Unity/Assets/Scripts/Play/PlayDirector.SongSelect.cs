@@ -528,8 +528,7 @@ public sealed partial class PlayDirector
             SongSelectDesignHeight - 170f), SongBackdropGlowTexture(), ScaleMode.StretchToFill, true);
         GUI.color = before;
 
-        DrawBackdropParticleField(t, rootDegrees, false);
-        DrawBackdropParticleField(t, rootDegrees, true);
+        DrawBackdropParticleField(t, rootDegrees);
         DrawBackdropLineParticles(t, rootDegrees);
 
         DrawSolid(new Rect(0f, SongSelectDesignHeight - 100f, SongSelectDesignWidth, 100f),
@@ -553,20 +552,20 @@ public sealed partial class PlayDirector
         return Color.Lerp(green, pink, Mathf.SmoothStep(0f, 1f, (phase - 10.7f) / 2.3f));
     }
 
-    void DrawBackdropParticleField(float time, float rootDegrees, bool foreground)
+    void DrawBackdropParticleField(float time, float rootDegrees)
     {
-        // 官机大、小 Cube 都以 Mesh 模式渲染；用深度带维持远中近景的遮挡。
+        // 按粒子年龄从远到近绘制，近处的方块自然盖住远处的方块。
         const int depthBands = 8;
         for (var band = 0; band < depthBands; band++)
         {
             // 两个官机发射器同为每秒 8 粒、寿命 12 秒，稳定态各约 96 粒。
-            DrawBackdropParticleDepthBand(time, rootDegrees, 96, true, band, depthBands, foreground);
-            DrawBackdropParticleDepthBand(time, rootDegrees, 96, false, band, depthBands, foreground);
+            DrawBackdropParticleDepthBand(time, rootDegrees, 96, true, band, depthBands);
+            DrawBackdropParticleDepthBand(time, rootDegrees, 96, false, band, depthBands);
         }
     }
 
     void DrawBackdropParticleDepthBand(float time, float rootDegrees, int count, bool small,
-        int depthBand, int depthBands, bool foreground)
+        int depthBand, int depthBands)
     {
         const float lifetime = 12f;
         var center = new Vector2(SongSelectDesignWidth * 0.5f, SongSelectDesignHeight * 0.5f);
@@ -580,43 +579,28 @@ public sealed partial class PlayDirector
             var age = Mathf.Repeat(time / lifetime + phase, 1f);
             if (Mathf.Min(depthBands - 1, Mathf.FloorToInt(age * depthBands)) != depthBand)
                 continue;
-            var fadeIn = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(age / 0.035f));
-            var fadeOut = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((1f - age) / 0.055f));
-            // 近景才越过主体色块，交接阶段平滑混合，避免宽色块突然盖住右侧。
-            var frontBlend = Mathf.SmoothStep(0f, 1f,
-                Mathf.InverseLerp(0.82f, 0.94f, age));
-            var alpha = fadeIn * fadeOut * (foreground
-                ? frontBlend * 0.34f : 1f - frontBlend);
-            if (alpha < 0.015f) continue;
-
-            // Z 轴靠近镜头时透视尺寸会在后半程明显加速，不能使用匀速缩放。
-            var progress = age * age;
-            var theta = i * 2.3999632f + BackdropHash(i * 29 + seed + 11) * 0.72f + rootAngle;
-            var perspective = Mathf.Lerp(0.32f, 1.85f, progress);
-            var travel = perspective;
-            // 官机 ShapeModule 为 Circle，Radius Thickness = 0：从圆周发射，
-            // 不是在圆面内随机取半径；Z 轴速度产生向外扩张的透视效果。
+            // 发射器位于 Camera_3D 前方约 8.9 个世界单位，Z 速度为 1/s。
+            // 镜头前的粒子会迅速放大并离开画面；它们不会在屏幕边缘缩小重生。
+            var cameraDistance = 8.9f - age * lifetime;
+            if (cameraDistance < 0.9f) continue;
+            var perspective = 8.9f / cameraDistance;
+            // 官机使用随机圆周角。黄金角会让方块过于均匀，缺少自然的疏密变化。
+            var theta = BackdropHash(i * 29 + seed + 11) * Mathf.PI * 2f + rootAngle;
+            // ShapeModule 的半径分别为 3.3 和 1.2，Radius Thickness = 0。
             var emitterRatio = small ? 1.2f / 3.3f : 1f;
-            var radiusX = 860f * emitterRatio;
-            var radiusY = 490f * emitterRatio;
-            var x = center.x + Mathf.Cos(theta) * radiusX * travel;
-            var y = center.y + Mathf.Sin(theta) * radiusY * travel;
+            var radius = 500f * emitterRatio * perspective;
+            var x = center.x + Mathf.Cos(theta) * radius;
+            var y = center.y + Mathf.Sin(theta) * radius;
 
             // 官机 startSize：ParCubeS=0.10–0.42，大 Cube=1–3。
             // 两者用同一 Mesh，尺寸差来自粒子大小，不应把小 Cube 拉成竖线。
             var sourceSize = small
                 ? Mathf.Lerp(0.10f, 0.42f, BackdropHash(i * 71 + seed + 31))
                 : Mathf.Lerp(1f, 3f, BackdropHash(i * 71 + seed + 31));
-            var height = sourceSize * 145f;
+            var height = sourceSize * 110f;
             var width = height * Mathf.Lerp(0.88f, 1.42f, BackdropHash(i * 61 + seed + 23));
             width *= perspective;
             height *= perspective;
-            if (!small && width > 560f)
-            {
-                var fit = 560f / width;
-                width *= fit;
-                height *= fit;
-            }
             var rect = new Rect(x - width * 0.5f, y - height * 0.5f, width, height);
             if (rect.xMax < -220f || rect.xMin > SongSelectDesignWidth + 220f
                 || rect.yMax < 35f || rect.yMin > SongSelectDesignHeight + 160f)
@@ -625,20 +609,18 @@ public sealed partial class PlayDirector
             // Rotation over Lifetime: 小 Cube 30°/s，大 Cube 5°/s；每粒从出生角开始旋转。
             var angle = Mathf.Lerp(0f, 193f, BackdropHash(i * 97 + seed + 47))
                 + rootDegrees + age * lifetime * (small ? 30f : 5f);
-            var color = BackdropParticleColor(alpha, age);
+            var color = BackdropParticleColor(age);
             DrawRotatedTexture(rect, SongBackdropCubeTexture(), color, angle);
         }
     }
 
-    static Color BackdropParticleColor(float alpha, float depth)
+    static Color BackdropParticleColor(float depth)
     {
-        // F9 两组方块共用的 ParCubeL 材质为紫色；明亮色块来自底层背景变化。
+        // F9 两组方块共用紫色材质；近景大块仍保留遮挡，不做透明淡出。
         var nearBlend = Mathf.SmoothStep(0f, 1f,
-            Mathf.InverseLerp(0.55f, 0.95f, depth));
-        var color = Color.Lerp(new Color(0.20f, 0f, 0.35f),
-            new Color(0.498f, 0f, 1f), nearBlend);
-        color.a = alpha * Mathf.Lerp(0.88f, 0.96f, nearBlend);
-        return color;
+            Mathf.InverseLerp(0.25f, 0.65f, depth));
+        return Color.Lerp(new Color(0.38f, 0f, 0.73f),
+            new Color(0.24f, 0f, 0.48f), nearBlend);
     }
 
     static void DrawBackdropLineParticles(float time, float rootDegrees)
