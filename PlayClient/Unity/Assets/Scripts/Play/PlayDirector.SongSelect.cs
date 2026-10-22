@@ -618,25 +618,24 @@ public sealed partial class PlayDirector
             // 镜头前的粒子会迅速放大并离开画面；它们不会在屏幕边缘缩小重生。
             var cameraDistance = 8.9f - age * lifetime;
             if (cameraDistance < 0.9f) continue;
-            var perspective = 8.9f / cameraDistance;
+            // F9 Camera_3D 为 60° 透视相机，画面高 1080；这给出约 935 px 的焦距。
+            // 用相机投影统一计算圆周半径和方块尺寸，避免横向拉宽、纵向压扁。
+            const float focalLengthPixels = 935.307f;
+            var pixelsPerWorldUnit = focalLengthPixels / cameraDistance;
             // 官机使用随机圆周角。黄金角会让方块过于均匀，缺少自然的疏密变化。
             var theta = BackdropHash(i * 29 + seed + 11) * Mathf.PI * 2f + rootAngle;
             // ShapeModule 的半径分别为 3.3 和 1.2，Radius Thickness = 0。
-            var emitterRatio = small ? 1.2f / 3.3f : 1f;
-            // 实机截图中，投影后的圆周在纵向被压进背景可视区域；
-            // 上一版使用 500×500，让过多方块在上下边缘提前离屏。
-            var x = center.x + Mathf.Cos(theta) * 450f * emitterRatio * perspective;
-            var y = center.y + Mathf.Sin(theta) * 320f * emitterRatio * perspective;
+            var projectedRadius = (small ? 1.2f : 3.3f) * pixelsPerWorldUnit;
+            var x = center.x + Mathf.Cos(theta) * projectedRadius;
+            var y = center.y + Mathf.Sin(theta) * projectedRadius;
 
             // 官机 startSize：ParCubeS=0.10–0.42，大 Cube=1–3。
             // 两者用同一 Mesh，尺寸差来自粒子大小，不应把小 Cube 拉成竖线。
             var sourceSize = small
                 ? Mathf.Lerp(0.10f, 0.42f, BackdropHash(i * 71 + seed + 31))
                 : Mathf.Lerp(1f, 3f, BackdropHash(i * 71 + seed + 31));
-            var height = sourceSize * (small ? 125f : 90f);
+            var height = sourceSize * pixelsPerWorldUnit;
             var width = height * Mathf.Lerp(0.88f, 1.42f, BackdropHash(i * 61 + seed + 23));
-            width *= perspective;
-            height *= perspective;
             var rect = new Rect(x - width * 0.5f, y - height * 0.5f, width, height);
             if (rect.xMax < -220f || rect.xMin > SongSelectDesignWidth + 220f
                 || rect.yMax < 35f || rect.yMin > SongSelectDesignHeight + 160f)
